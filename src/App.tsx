@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { ChatMessage, GameConfig, GameState, PlayerColor, TradeOffer } from './types';
+import { ChatMessage, GameConfig, GameState, Player, PlayerColor, TradeOffer } from './types';
 import {
   addChatMessageAction,
   addMultiplayerPeer,
@@ -42,6 +42,7 @@ import { TradeModal } from './components/Modals/TradeModal';
 import { EventNotificationModal } from './components/Modals/EventNotificationModal';
 import { GameOverModal } from './components/Modals/GameOverModal';
 import { ChatDrawer } from './components/Multiplayer/ChatDrawer';
+import { Hourglass } from 'lucide-react';
 
 export const App: React.FC = () => {
   const [gameState, setGameState] = useState<GameState>(() => createInitialGameState());
@@ -73,6 +74,35 @@ export const App: React.FC = () => {
       return next;
     });
   }, []);
+
+  // Determine current local player object
+  const getMyPlayer = useCallback((): Player | undefined => {
+    if (gameState.config.mode === 'online_multiplayer') {
+      if (network.isHost) {
+        return gameState.players[0];
+      }
+      const clientPlayer = gameState.players.find(
+        (p) => p.id === network.myId || p.peerId === network.myId
+      );
+      return clientPlayer || gameState.players[1] || gameState.players[0];
+    }
+    if (gameState.config.mode === 'pass_and_play') {
+      return gameState.players[gameState.turnIndex] || gameState.players[0];
+    }
+    return gameState.players[0];
+  }, [gameState.config.mode, gameState.players, gameState.turnIndex]);
+
+  const myPlayer = getMyPlayer();
+  const currentPlayer = gameState.players[gameState.turnIndex];
+
+  // Strictly enforce turn ownership
+  const isMyTurn = gameState.config.mode === 'pass_and_play'
+    ? true
+    : gameState.config.mode === 'solo'
+    ? !currentPlayer?.isAI
+    : !!(currentPlayer && myPlayer && (currentPlayer.id === myPlayer.id || currentPlayer.peerId === myPlayer.id));
+
+  const canRoll = isMyTurn && gameState.status === 'ROLL_REQUIRED' && !gameState.isMovingPawn;
 
   // ----------------------------------------------------
   // LOBBY LAUNCH HANDLERS
@@ -129,7 +159,7 @@ export const App: React.FC = () => {
         updateAndBroadcast((prev) => addMultiplayerPeer(prev, peerId, name, color, avatar));
       },
       (fromPeer, action, payload) => {
-        handleRemoteActionFromPeer(action, payload);
+        handleRemoteActionFromPeer(fromPeer, action, payload);
       },
       (chat) => {
         audio.playClick();
@@ -190,24 +220,26 @@ export const App: React.FC = () => {
   };
 
   // ----------------------------------------------------
-  // REMOTE ACTIONS (HOST SIDE)
+  // REMOTE ACTIONS (HOST AUTHORITATIVE VALIDATION)
   // ----------------------------------------------------
-  const handleRemoteActionFromPeer = (action: string, payload: Record<string, unknown> = {}) => {
+  const handleRemoteActionFromPeer = (fromPeer: string, action: string, payload: Record<string, unknown> = {}) => {
+    const state = gameStateRef.current;
+    const acting = state.players[state.turnIndex];
+
     if (action === 'ROLL_DICE') {
-      handleRollDice();
+      if (acting && (acting.peerId === fromPeer || acting.id === fromPeer || !fromPeer || fromPeer === 'tab-peer')) {
+        handleRollDice();
+      }
     } else if (action === 'BUY_PROPERTY') {
       const spaceIdx = payload.spaceIndex as number;
-      const acting = gameStateRef.current.players[gameStateRef.current.turnIndex];
       if (acting) updateAndBroadcast((prev) => buyPropertyAction(prev, acting.id, spaceIdx));
     } else if (action === 'PASS_PROPERTY') {
       updateAndBroadcast((prev) => passPropertyAction(prev));
     } else if (action === 'DEVELOP_PROPERTY') {
       const spaceIdx = payload.spaceIndex as number;
-      const acting = gameStateRef.current.players[gameStateRef.current.turnIndex];
       if (acting) updateAndBroadcast((prev) => developPropertyAction(prev, acting.id, spaceIdx));
     } else if (action === 'MORTGAGE_PROPERTY') {
       const spaceIdx = payload.spaceIndex as number;
-      const acting = gameStateRef.current.players[gameStateRef.current.turnIndex];
       if (acting) {
         updateAndBroadcast((prev) => {
           const { newState } = executeMortgageProperty(prev, acting.id, spaceIdx);
@@ -216,7 +248,6 @@ export const App: React.FC = () => {
       }
     } else if (action === 'UNMORTGAGE_PROPERTY') {
       const spaceIdx = payload.spaceIndex as number;
-      const acting = gameStateRef.current.players[gameStateRef.current.turnIndex];
       if (acting) {
         updateAndBroadcast((prev) => {
           const { newState } = executeUnmortgageProperty(prev, acting.id, spaceIdx);
@@ -225,7 +256,6 @@ export const App: React.FC = () => {
       }
     } else if (action === 'SELL_PROPERTY') {
       const spaceIdx = payload.spaceIndex as number;
-      const acting = gameStateRef.current.players[gameStateRef.current.turnIndex];
       if (acting) {
         updateAndBroadcast((prev) => {
           const { newState } = executeSellPropertyToBank(prev, acting.id, spaceIdx);
@@ -307,9 +337,15 @@ export const App: React.FC = () => {
       return;
     }
 
-    if (state.config.mode === 'online_multiplayer' && !network.isHost) {
-      network.sendAction('ROLL_DICE');
-      return;
+    if (state.config.mode === 'online_multiplayer') {
+      if (!isMyTurn) {
+        console.warn('Not your turn to roll!');
+        return;
+      }
+      if (!network.isHost) {
+        network.sendAction('ROLL_DICE');
+        return;
+      }
     }
 
     setIsRollingAnimation(true);
@@ -324,7 +360,7 @@ export const App: React.FC = () => {
 
       executePawnMovement(rollTotal, startPos, state.turnIndex);
     }, rollDelay);
-  }, [isRollingAnimation, executePawnMovement, broadcastUpdatedState]);
+  }, [isMyTurn, isRollingAnimation, executePawnMovement, broadcastUpdatedState]);
 
   // ----------------------------------------------------
   // AUCTION COUNTDOWN & AI BIDDING TIMER LOOP
@@ -336,7 +372,6 @@ export const App: React.FC = () => {
       setGameState((prev) => {
         if (!prev.auction || prev.status !== 'AUCTION_ACTIVE') return prev;
 
-        // Check if AI bidders want to bid
         const aiPlayers = prev.players.filter((p) => p.isAI && !p.bankrupt);
         for (const ai of aiPlayers) {
           const aiBid = decideAIBid(ai, prev.auction, prev);
@@ -345,7 +380,6 @@ export const App: React.FC = () => {
           }
         }
 
-        // Decrement timer
         if (prev.auction.timeLeft > 1) {
           return {
             ...prev,
@@ -355,7 +389,6 @@ export const App: React.FC = () => {
             },
           };
         } else {
-          // Timer reached 0 -> Finalize Auction
           return finalizeAuctionAction(prev);
         }
       });
@@ -371,8 +404,8 @@ export const App: React.FC = () => {
     const isHostOrSolo = gameState.config.mode !== 'online_multiplayer' || network.isHost;
     if (!isHostOrSolo) return;
 
-    const currentPlayer = gameState.players[gameState.turnIndex];
-    if (!currentPlayer || !currentPlayer.isAI || currentPlayer.bankrupt) return;
+    const currentTurnP = gameState.players[gameState.turnIndex];
+    if (!currentTurnP || !currentTurnP.isAI || currentTurnP.bankrupt) return;
 
     const isFast = gameState.config.gameSpeed === 'fast';
 
@@ -500,9 +533,7 @@ export const App: React.FC = () => {
     updateAndBroadcast((prev) => placeAuctionBidAction(prev, bidderId, amount));
   };
 
-  const handlePassAuction = (bidderId: string) => {
-    // If player passes, no-op or mark inactive
-  };
+  const handlePassAuction = (bidderId: string) => {};
 
   const handleInvestStockMarket = (playerId: string, amount: number) => {
     if (gameState.config.mode === 'online_multiplayer' && !network.isHost) {
@@ -524,7 +555,7 @@ export const App: React.FC = () => {
   };
 
   const handleSendChat = (text: string) => {
-    const sender = gameState.players[gameState.turnIndex] || gameState.players[0];
+    const sender = myPlayer || gameState.players[0];
     const newChat: ChatMessage = {
       id: `chat-${Date.now()}`,
       senderId: sender?.id || 'player',
@@ -540,6 +571,7 @@ export const App: React.FC = () => {
   };
 
   const handleManualEndTurn = () => {
+    if (!isMyTurn) return;
     if (gameState.config.mode === 'online_multiplayer' && !network.isHost) {
       network.sendAction('END_TURN');
       return;
@@ -616,10 +648,6 @@ export const App: React.FC = () => {
     );
   }
 
-  const currentPlayer = gameState.players[gameState.turnIndex];
-  const isHumanTurn = currentPlayer && !currentPlayer.isAI;
-  const canRoll = isHumanTurn && gameState.status === 'ROLL_REQUIRED' && !gameState.isMovingPawn;
-
   return (
     <div className="min-h-screen w-full bg-[#030612] text-slate-100 flex flex-col font-sans select-none overflow-x-hidden">
       {/* Top Navbar */}
@@ -652,9 +680,11 @@ export const App: React.FC = () => {
             onRollDice={handleRollDice}
             canRoll={canRoll}
             isRolling={isRollingAnimation}
+            isMyTurn={isMyTurn}
           />
 
-          {isHumanTurn && gameState.status === 'TURN_END' && (
+          {/* End Turn Banner for Active Turn Player */}
+          {isMyTurn && gameState.status === 'TURN_END' && (
             <div className="mt-3 flex items-center gap-3 animate-in fade-in">
               <button
                 onClick={handleManualEndTurn}
@@ -670,24 +700,32 @@ export const App: React.FC = () => {
         <div className="w-full flex justify-center order-3">
           <PlayerCommand
             gameState={gameState}
+            myPlayer={myPlayer}
             onDevelop={(idx) => setInspectedSpaceIndex(idx)}
             onOpenTrade={() => setIsTradeOpen(true)}
           />
         </div>
       </main>
 
-      {/* 1. Property Purchase Modal (When landing on unowned space) */}
+      {/* 1. Property Purchase Modal (Only opens for the acting turn player!) */}
       {gameState.status === 'PROPERTY_DECISION' && gameState.pendingSpace && (
-        <PropertyPurchaseModal
-          space={gameState.pendingSpace}
-          player={gameState.players[gameState.turnIndex]}
-          gameState={gameState}
-          onBuy={handleBuyProperty}
-          onPass={handlePassProperty}
-        />
+        isMyTurn ? (
+          <PropertyPurchaseModal
+            space={gameState.pendingSpace}
+            player={currentPlayer}
+            gameState={gameState}
+            onBuy={handleBuyProperty}
+            onPass={handlePassProperty}
+          />
+        ) : (
+          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl bg-slate-900/95 border border-cyan-500/40 text-cyan-300 font-mono text-xs shadow-2xl flex items-center gap-2 backdrop-blur-xl animate-pulse">
+            <Hourglass className="w-4 h-4 animate-spin" />
+            <span>Waiting for <strong>{currentPlayer?.name}</strong> to decide on {gameState.pendingSpace.name}...</span>
+          </div>
+        )
       )}
 
-      {/* 2. Interactive Property Hologram Detail Card (When clicking any space) */}
+      {/* 2. Interactive Property Hologram Detail Card */}
       <PropertyDetailModal
         spaceIndex={inspectedSpaceIndex}
         gameState={gameState}
@@ -755,7 +793,7 @@ export const App: React.FC = () => {
         />
       )}
 
-      {/* 7. Game Over / Victory Modal */}
+      {/* 7. Game Over Modal */}
       {gameState.status === 'GAME_OVER' && (
         <GameOverModal
           gameState={gameState}

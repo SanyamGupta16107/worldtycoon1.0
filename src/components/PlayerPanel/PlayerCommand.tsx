@@ -4,26 +4,27 @@ import { calculatePlayerNetWorth } from '../../utils/calculations';
 import { formatCurrency } from '../../utils/formatting';
 import { HoldingsList } from './HoldingsList';
 import { GameLog } from './GameLog';
-import { DollarSign, Shield, Users, Crown, Skull, UserCheck, Flame } from 'lucide-react';
+import { DollarSign, Shield, Users, Crown, Skull } from 'lucide-react';
 
 interface PlayerCommandProps {
   gameState: GameState;
+  myPlayer?: Player;
   onDevelop: (spaceIndex: number) => void;
   onOpenTrade: (targetPlayerId?: string) => void;
 }
 
 export const PlayerCommand: React.FC<PlayerCommandProps> = ({
   gameState,
+  myPlayer,
   onDevelop,
   onOpenTrade,
 }) => {
   const activeTurnPlayer = gameState.players[gameState.turnIndex];
   const isPassAndPlay = gameState.config.mode === 'pass_and_play';
 
-  // In Pass & Play, active player is whoever's turn it is; otherwise human player (P1 or peerId)
   const currentActingHuman = isPassAndPlay
     ? activeTurnPlayer
-    : gameState.players.find(p => !p.isAI) || gameState.players[0];
+    : myPlayer || gameState.players.find(p => !p.isAI) || gameState.players[0];
 
   const cash = currentActingHuman?.money || 0;
   const netWorth = currentActingHuman ? calculatePlayerNetWorth(currentActingHuman, gameState) : 0;

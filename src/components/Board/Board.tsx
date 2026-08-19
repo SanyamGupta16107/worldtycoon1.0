@@ -10,6 +10,7 @@ interface BoardProps {
   onRollDice?: () => void;
   canRoll: boolean;
   isRolling: boolean;
+  isMyTurn?: boolean;
 }
 
 export const Board: React.FC<BoardProps> = ({
@@ -18,6 +19,7 @@ export const Board: React.FC<BoardProps> = ({
   onRollDice,
   canRoll,
   isRolling,
+  isMyTurn = true,
 }) => {
   return (
     <div className="flex flex-col items-center justify-center w-full h-full p-1 sm:p-2 relative select-none max-w-full">
@@ -62,6 +64,7 @@ export const Board: React.FC<BoardProps> = ({
             onRollDice={onRollDice}
             canRoll={canRoll}
             isRolling={isRolling}
+            isMyTurn={isMyTurn}
           />
 
           {/* Animated Player Pawns */}

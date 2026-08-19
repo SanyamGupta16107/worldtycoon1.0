@@ -1,13 +1,14 @@
 import React from 'react';
 import { GameState } from '../../types';
 import { DiceDisplay } from './DiceDisplay';
-import { Dices, Globe2, Activity, Play, Volume2, Shield, Radio, Sparkles } from 'lucide-react';
+import { Dices, Globe2, Activity, Hourglass, Sparkles } from 'lucide-react';
 
 interface CenterArenaProps {
   gameState: GameState;
   onRollDice?: () => void;
   canRoll: boolean;
   isRolling: boolean;
+  isMyTurn?: boolean;
 }
 
 export const CenterArena: React.FC<CenterArenaProps> = ({
@@ -15,11 +16,36 @@ export const CenterArena: React.FC<CenterArenaProps> = ({
   onRollDice,
   canRoll,
   isRolling,
+  isMyTurn = true,
 }) => {
   const currentPlayer = gameState.players[gameState.turnIndex];
-  const isHumanTurn = currentPlayer && !currentPlayer.isAI;
   const isPassAndPlay = gameState.config.mode === 'pass_and_play';
+  const isOnline = gameState.config.mode === 'online_multiplayer';
   const latestLog = gameState.logs[0]?.text || 'Roll dice to initiate global asset acquisitions.';
+
+  const getTurnBannerText = () => {
+    if (gameState.status === 'GAME_OVER') return '🏆 SEASON COMPLETE';
+    if (!currentPlayer) return '';
+
+    if (isOnline) {
+      return isMyTurn ? '★ YOUR TURN TO MOVE' : `WAITING FOR ${currentPlayer.name}...`;
+    }
+    if (isPassAndPlay) {
+      return `${currentPlayer.name}'S TURN`;
+    }
+    return !currentPlayer.isAI ? 'YOUR TURN TO MOVE' : `${currentPlayer.name} (AI) TO MOVE`;
+  };
+
+  const getButtonText = () => {
+    if (isRolling) return 'ROLLING DICE...';
+    if (isOnline) {
+      return isMyTurn ? 'ROLL DICE (YOUR TURN)' : `WAITING FOR ${currentPlayer?.name || 'PLAYER'}...`;
+    }
+    if (isPassAndPlay) {
+      return `ROLL DICE (${currentPlayer?.name})`;
+    }
+    return !currentPlayer?.isAI ? 'ROLL DICE (YOUR TURN)' : 'AI EXECUTING MOVE...';
+  };
 
   return (
     <div
@@ -29,14 +55,13 @@ export const CenterArena: React.FC<CenterArenaProps> = ({
       }}
       className="m-1 rounded-3xl bg-[#080d1e]/95 border border-cyan-500/30 backdrop-blur-2xl shadow-[0_15px_40px_rgba(0,0,0,0.8),inset_0_0_20px_rgba(6,182,212,0.08)] flex flex-col items-center justify-between p-3 sm:p-5 text-center relative overflow-hidden select-none"
     >
-      {/* Dynamic Cyber Ambient Glow */}
+      {/* Ambient Glow */}
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_35%,rgba(6,182,212,0.14),transparent_70%)] pointer-events-none" />
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_70%,rgba(168,85,247,0.1),transparent_65%)] pointer-events-none" />
 
-      {/* Top: Brand Header & Animated Wireframe Globe Seal */}
+      {/* Top: Brand Header */}
       <div className="flex flex-col items-center z-10 w-full">
         <div className="relative w-11 h-11 sm:w-14 sm:h-14 flex items-center justify-center mb-1">
-          {/* Orbital Radar Rings */}
           <div className="absolute inset-0 rounded-full border border-dashed border-cyan-500/40 animate-spin-slow" />
           <div className="absolute inset-1 rounded-full border border-purple-500/30 animate-[spin_12s_linear_infinite_reverse]" />
           
@@ -53,7 +78,7 @@ export const CenterArena: React.FC<CenterArenaProps> = ({
         </div>
       </div>
 
-      {/* Middle: Active Turn Banner, 3D Dice & Action Deck */}
+      {/* Middle: Active Turn Banner, 3D Dice & Action Button */}
       <div className="flex flex-col items-center gap-2.5 z-10 my-auto w-full max-w-xs">
         {/* Turn Status Banner */}
         <div className="w-full">
@@ -63,11 +88,13 @@ export const CenterArena: React.FC<CenterArenaProps> = ({
             </div>
           ) : currentPlayer ? (
             <div
-              className="px-3.5 py-2 border rounded-xl text-slate-100 text-xs font-mono tracking-wider uppercase flex items-center justify-center gap-2 shadow-inner transition-all"
+              className={`px-3.5 py-2 border rounded-xl text-xs font-mono tracking-wider uppercase flex items-center justify-center gap-2 shadow-inner transition-all ${
+                isOnline && !isMyTurn ? 'opacity-75 border-slate-800' : ''
+              }`}
               style={{
                 backgroundColor: '#040714',
-                borderColor: `${currentPlayer.color}88`,
-                boxShadow: `0 0 15px ${currentPlayer.color}33`,
+                borderColor: isMyTurn ? `${currentPlayer.color}88` : undefined,
+                boxShadow: isMyTurn ? `0 0 15px ${currentPlayer.color}33` : undefined,
               }}
             >
               <span
@@ -75,10 +102,10 @@ export const CenterArena: React.FC<CenterArenaProps> = ({
                 style={{ backgroundColor: currentPlayer.color }}
               />
               <span className="font-black text-white truncate max-w-[140px] text-xs">
-                {isPassAndPlay ? `${currentPlayer.name}'S TURN` : `${currentPlayer.name} TO MOVE`}
+                {getTurnBannerText()}
               </span>
-              {isHumanTurn && !isPassAndPlay && (
-                <span className="text-[9px] px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-bold">
+              {isOnline && isMyTurn && (
+                <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold">
                   YOU
                 </span>
               )}
@@ -103,23 +130,14 @@ export const CenterArena: React.FC<CenterArenaProps> = ({
               }
             `}
           >
-            <Dices className="w-4 h-4" />
-            {isRolling
-              ? 'ROLLING DICE...'
-              : canRoll
-              ? isHumanTurn
-                ? isPassAndPlay
-                  ? `ROLL DICE (${currentPlayer?.name})`
-                  : 'ROLL DICE (YOUR TURN)'
-                : 'EXECUTE AI ROLL'
-              : 'AWAITING ACTION'}
+            {canRoll ? <Dices className="w-4 h-4" /> : <Hourglass className="w-4 h-4 animate-spin-slow" />}
+            {getButtonText()}
           </button>
         )}
       </div>
 
       {/* Bottom: Animated Soundwave Visualizer & Activity Ticker */}
       <div className="w-full z-10 flex flex-col gap-1.5">
-        {/* Equalizer Waveform */}
         <div className="flex items-center justify-center gap-1 h-2 opacity-60">
           <span className="w-1 bg-cyan-400 rounded-full animate-[pulse_0.6s_ease-in-out_infinite] h-full" />
           <span className="w-1 bg-indigo-400 rounded-full animate-[pulse_0.9s_ease-in-out_infinite] h-1.5" />
@@ -128,7 +146,6 @@ export const CenterArena: React.FC<CenterArenaProps> = ({
           <span className="w-1 bg-cyan-400 rounded-full animate-[pulse_0.7s_ease-in-out_infinite] h-full" />
         </div>
 
-        {/* Live Activity Ticker */}
         <div className="px-3 py-1.5 rounded-xl bg-slate-950/90 border border-slate-800/90 text-[9px] sm:text-[10px] text-slate-300 font-mono truncate flex items-center justify-center gap-1.5 shadow-inner">
           <Activity className="w-3 h-3 text-cyan-400 shrink-0 animate-pulse" />
           <span className="truncate">{latestLog}</span>
