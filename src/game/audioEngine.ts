@@ -254,6 +254,38 @@ class ProceduralAudioEngine {
     } catch {}
   }
 
+  public playStockMarketSiren() {
+    if (this.isMuted) return;
+    this.initCtx();
+    if (!this.ctx) return;
+
+    try {
+      const now = this.ctx.currentTime;
+      // High-tech emergency trading floor siren klaxon (2 rising and falling sweeps)
+      for (let i = 0; i < 3; i++) {
+        const sweepStart = now + i * 0.35;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(440, sweepStart);
+        osc.frequency.linearRampToValueAtTime(880, sweepStart + 0.18);
+        osc.frequency.linearRampToValueAtTime(440, sweepStart + 0.32);
+
+        gain.gain.setValueAtTime(0.001, sweepStart);
+        gain.gain.linearRampToValueAtTime(0.12, sweepStart + 0.05);
+        gain.gain.linearRampToValueAtTime(0.1, sweepStart + 0.25);
+        gain.gain.linearRampToValueAtTime(0.001, sweepStart + 0.34);
+
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+
+        osc.start(sweepStart);
+        osc.stop(sweepStart + 0.35);
+      }
+    } catch {}
+  }
+
   public stopAmbientTrack() {
     this.ambientOscs.forEach(o => {
       try {

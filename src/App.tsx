@@ -293,8 +293,9 @@ export const App: React.FC = () => {
       updateAndBroadcast((prev) => placeAuctionBidAction(prev, bidderId, amount));
     } else if (action === 'INVEST_STOCK') {
       const playerId = payload.playerId as string;
+      const companyId = payload.companyId as string;
       const amount = payload.amount as number;
-      updateAndBroadcast((prev) => investStockMarketAction(prev, playerId, amount));
+      updateAndBroadcast((prev) => investStockMarketAction(prev, playerId, companyId, amount));
     } else if (action === 'PROPOSE_TRADE') {
       const trade = payload.trade as TradeOffer;
       updateAndBroadcast((prev) => {
@@ -556,12 +557,12 @@ export const App: React.FC = () => {
 
   const handlePassAuction = (bidderId: string) => {};
 
-  const handleInvestStockMarket = (playerId: string, amount: number) => {
+  const handleInvestStockMarket = (playerId: string, companyId: string, amount: number) => {
     if (gameState.config.mode === 'online_multiplayer' && !network.isHost) {
-      network.sendAction('INVEST_STOCK', { playerId, amount, fromPlayerId: localPlayerIdRef.current });
+      network.sendAction('INVEST_STOCK', { playerId, companyId, amount, fromPlayerId: localPlayerIdRef.current });
       return;
     }
-    updateAndBroadcast((prev) => investStockMarketAction(prev, playerId, amount));
+    updateAndBroadcast((prev) => investStockMarketAction(prev, playerId, companyId, amount));
   };
 
   const handleProposeTrade = (trade: TradeOffer) => {

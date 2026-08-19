@@ -1,5 +1,6 @@
 import { INITIAL_BOARD_SPACES } from '../data/boardData';
 import { INITIAL_MARKET_STATE } from '../data/marketData';
+import { STOCK_COMPANIES } from '../data/stockData';
 import {
   AuctionState,
   ChatMessage,
@@ -8,6 +9,7 @@ import {
   GameLog,
   GameState,
   Player,
+  PlayerStockInvestment,
   StockMarketOutcome,
   TradeOffer,
 } from '../types';
@@ -191,6 +193,7 @@ export function createInitialGameState(userConfig: Partial<GameConfig> = {}): Ga
     stockMarket: {
       isOpen: false,
       roundsRemaining: 0,
+      totalDurationRounds: 0,
       investments: {},
       lastOutcome: null,
     },
@@ -438,11 +441,18 @@ export function finalizeAuctionAction(state: GameState): GameState {
 }
 
 /**
- * Player commits investment into the High-Risk Stock Market
+ * Player commits investment into a specific Company in the High-Risk Stock Market
  */
-export function investStockMarketAction(state: GameState, playerId: string, amount: number): GameState {
+export function investStockMarketAction(
+  state: GameState,
+  playerId: string,
+  companyId: string,
+  amount: number
+): GameState {
   const player = state.players.find(p => p.id === playerId);
   if (!player || amount <= 0 || player.money < amount) return state;
+
+  const targetCompany = STOCK_COMPANIES.find(c => c.id === companyId) || STOCK_COMPANIES[0];
 
   const updatedPlayers = state.players.map(p => {
     if (p.id === playerId) {
@@ -451,9 +461,21 @@ export function investStockMarketAction(state: GameState, playerId: string, amou
     return p;
   });
 
-  const updatedInvestments = {
+  const playerInvestments = state.stockMarket.investments[playerId] || [];
+  const existingIndex = playerInvestments.findIndex(i => i.companyId === targetCompany.id);
+
+  let newInvestments: PlayerStockInvestment[];
+  if (existingIndex >= 0) {
+    newInvestments = playerInvestments.map((inv, idx) =>
+      idx === existingIndex ? { ...inv, amount: inv.amount + amount } : inv
+    );
+  } else {
+    newInvestments = [...playerInvestments, { companyId: targetCompany.id, amount }];
+  }
+
+  const updatedInvestmentsMap = {
     ...state.stockMarket.investments,
-    [playerId]: (state.stockMarket.investments[playerId] || 0) + amount,
+    [playerId]: newInvestments,
   };
 
   const logEntry: GameLog = {
@@ -461,7 +483,7 @@ export function investStockMarketAction(state: GameState, playerId: string, amou
     timestamp: new Date().toLocaleTimeString(),
     round: state.round,
     type: 'stock',
-    text: `📈 ${player.name} committed ${formatCurrency(amount)} into the High-Risk Stock Market Exchange!`,
+    text: `📈 ${player.name} allocated ${formatCurrency(amount)} into ${targetCompany.ticker} (${targetCompany.name})!`,
   };
 
   audio.playCashRegister();
@@ -471,7 +493,7 @@ export function investStockMarketAction(state: GameState, playerId: string, amou
     players: updatedPlayers,
     stockMarket: {
       ...state.stockMarket,
-      investments: updatedInvestments,
+      investments: updatedInvestmentsMap,
     },
     logs: [logEntry, ...state.logs.slice(0, 99)],
   };
@@ -495,13 +517,11 @@ export function handleSpaceLanding(state: GameState, playerIndex: number): GameS
 
   // 1. GLOBAL AUCTION CORNER (Space 16)
   if (space.type === 'auction') {
-    // Pick an unowned property from the board to auction
     const unownedSpaces = state.spaces.filter(s => (s.type === 'city' || s.type === 'transport') && s.owner === null);
     if (unownedSpaces.length > 0) {
       const targetSpace = unownedSpaces[Math.floor(Math.random() * unownedSpaces.length)];
       return startAuctionAction(state, targetSpace.index, null);
     } else {
-      // If all properties owned, pick player's lowest property or give cash bonus
       const logEntry: GameLog = {
         id: `log-auc-all-${Date.now()}`,
         timestamp: new Date().toLocaleTimeString(),
@@ -536,7 +556,6 @@ export function handleSpaceLanding(state: GameState, playerIndex: number): GameS
         const { newState } = executePropertyPurchase(state, player.id, space.index);
         return { ...newState, isMovingPawn: false };
       } else {
-        // If AI passes on buying, put it up for Global Auction!
         return startAuctionAction(state, space.index, null);
       }
     }
@@ -602,7 +621,6 @@ export function buyPropertyAction(state: GameState, playerId: string, spaceIndex
 
 export function passPropertyAction(state: GameState): GameState {
   const pending = state.pendingSpace;
-  // If human passes on buying, put property up for Global Auction!
   if (pending && (pending.type === 'city' || pending.type === 'transport')) {
     return startAuctionAction(state, pending.index, null);
   }
@@ -685,10 +703,14 @@ export function endTurnAction(state: GameState): GameState {
   }
 
   let nextTurn = (stateAfterAIDev.turnIndex + 1) % stateAfterAIDev.players.length;
+  while (stateAfterAIDev.players[nextTurn]?.bankrupt) {
+    nextTurn = (nextTurn + 1) % stateAfterAIDev.players.length;
+  }
+
   let nextRound = stateAfterAIDev.round;
   let roundEvolutionState = stateAfterAIDev;
 
-  // Round Turnover
+  // When round wraps around to first player, trigger macro economy & stock market cycle
   if (nextTurn === 0) {
     nextRound += 1;
     roundEvolutionState = processRoundEconomyEvolution(stateAfterAIDev);
@@ -700,53 +722,94 @@ export function endTurnAction(state: GameState): GameState {
         stockState.roundsRemaining -= 1;
         roundEvolutionState = { ...roundEvolutionState, stockMarket: stockState };
       } else {
-        // Stock Market Closes & Resolves with extreme volatility!
+        // Stock Market Closes & Resolves with Sector Dynamics & High Volatility!
         const outcomes: StockMarketOutcome[] = [];
         let updatedPlayers = [...roundEvolutionState.players];
 
-        Object.entries(stockState.investments).forEach(([playerId, invested]) => {
+        Object.entries(stockState.investments).forEach(([playerId, investmentsList]) => {
           const player = updatedPlayers.find(p => p.id === playerId);
-          if (player && invested > 0) {
-            // 50% Win (+200% to +500%), 50% Loss (-50% to -100%)
-            const isWin = Math.random() < 0.5;
-            let multiplier = 0;
-            let returned = 0;
+          if (player && Array.isArray(investmentsList) && investmentsList.length > 0) {
+            investmentsList.forEach(inv => {
+              if (inv.amount <= 0) return;
+              const company = STOCK_COMPANIES.find(c => c.id === inv.companyId) || STOCK_COMPANIES[0];
 
-            if (isWin) {
-              multiplier = Number((Math.random() * 3 + 2.0).toFixed(2)); // 2.0x to 5.0x
-              returned = Math.round(invested * multiplier);
-            } else {
-              multiplier = Number((Math.random() * 0.5).toFixed(2)); // 0.0x to 0.5x
-              returned = Math.round(invested * multiplier);
-            }
+              // Determine company market behavior based on sector + market condition + shocks + volatility
+              let baseFactor = 1.0;
+              const condition = roundEvolutionState.market.condition;
 
-            updatedPlayers = updatedPlayers.map(p => {
-              if (p.id === playerId) {
-                return {
-                  ...p,
-                  money: p.money + returned,
-                  stats: {
-                    ...p.stats,
-                    stockMarketProfit: p.stats.stockMarketProfit + (returned - invested),
-                  }
-                };
+              if (condition === 'GROWING') baseFactor += 0.25;
+              else if (condition === 'STABLE') baseFactor += 0.10;
+              else if (condition === 'VOLATILE') baseFactor += (Math.random() > 0.5 ? 0.3 : -0.3);
+              else if (condition === 'RECESSION') baseFactor -= 0.20;
+              else if (condition === 'CRASH') {
+                if (company.sector === 'agri') baseFactor += 0.15; // Defensive food hedge
+                else baseFactor -= 0.35;
               }
-              return p;
-            });
 
-            outcomes.push({
-              playerId,
-              playerName: player.name,
-              invested,
-              returned,
-              multiplier,
-              isWin,
+              // Extreme Volatility outcome roll (Moonshot, Bull, Neutral, or Meltdown)
+              const roll = Math.random();
+              let multiplier = 1.0;
+              let isWin = true;
+              let headline = '';
+
+              if (roll < 0.28) {
+                // 1. MOONSHOT RALLY (+200% to +500%)
+                multiplier = Number((baseFactor * (Math.random() * 3.0 + 3.0)).toFixed(2));
+                isWin = true;
+                headline = `🚀 Record quantum breakthrough / contract delivers massive moonshot rally for ${company.name}!`;
+              } else if (roll < 0.62) {
+                // 2. STRONG BULL RALLY (+40% to +130%)
+                multiplier = Number((baseFactor * (Math.random() * 0.9 + 1.4)).toFixed(2));
+                isWin = true;
+                headline = `📈 Bullish sovereign institutional accumulation pushes ${company.ticker} higher!`;
+              } else if (roll < 0.76) {
+                // 3. SIDEWAYS CHOP (-20% to +20%)
+                multiplier = Number((baseFactor * (Math.random() * 0.4 + 0.8)).toFixed(2));
+                isWin = multiplier >= 1.0;
+                headline = `⚖️ High-frequency algorithmic consolidation across ${company.sectorLabel}.`;
+              } else {
+                // 4. LIQUIDITY MELTDOWN (-60% to -100%)
+                multiplier = Number((Math.random() * 0.4).toFixed(2)); // 0.0x to 0.4x
+                isWin = false;
+                headline = `💀 Severe liquidity crunch / short attack triggers severe crash for ${company.ticker}!`;
+              }
+
+              const returned = Math.round(inv.amount * multiplier);
+
+              updatedPlayers = updatedPlayers.map(p => {
+                if (p.id === playerId) {
+                  return {
+                    ...p,
+                    money: p.money + returned,
+                    stats: {
+                      ...p.stats,
+                      stockMarketProfit: p.stats.stockMarketProfit + (returned - inv.amount),
+                    },
+                  };
+                }
+                return p;
+              });
+
+              outcomes.push({
+                playerId,
+                playerName: player.name,
+                companyId: company.id,
+                companyName: company.name,
+                companyTicker: company.ticker,
+                companyIcon: company.icon,
+                invested: inv.amount,
+                returned,
+                multiplier,
+                isWin,
+                headline,
+              });
             });
           }
         });
 
         stockState.isOpen = false;
         stockState.roundsRemaining = 0;
+        stockState.totalDurationRounds = 0;
         stockState.investments = {};
         stockState.lastOutcome = outcomes.length > 0 ? outcomes : null;
 
@@ -755,7 +818,7 @@ export function endTurnAction(state: GameState): GameState {
           timestamp: new Date().toLocaleTimeString(),
           round: nextRound,
           type: 'stock',
-          text: `⚡ STOCK MARKET CLOSED: Extreme market resolution processed across participating empires!`,
+          text: `⚡ STOCK EXCHANGE CLOSED: Market resolutions computed across all listed enterprise sectors!`,
         };
 
         roundEvolutionState = {
@@ -767,10 +830,12 @@ export function endTurnAction(state: GameState): GameState {
         };
       }
     } else {
-      // 30% chance to randomly open High-Risk Stock Market window for 2 rounds
+      // 35% chance to randomly open High-Risk Stock Market window with RANDOM DURATION (1, 2, or 3 rounds)
       if (Math.random() < 0.35 && nextRound < roundEvolutionState.config.roundLimit) {
+        const randomDuration = Math.floor(Math.random() * 3) + 1; // 1, 2, or 3 rounds randomly
         stockState.isOpen = true;
-        stockState.roundsRemaining = 2;
+        stockState.roundsRemaining = randomDuration;
+        stockState.totalDurationRounds = randomDuration;
         stockState.investments = {};
         stockState.lastOutcome = null;
 
@@ -779,10 +844,10 @@ export function endTurnAction(state: GameState): GameState {
           timestamp: new Date().toLocaleTimeString(),
           round: nextRound,
           type: 'stock',
-          text: `🔥 STOCK MARKET EXCHANGE OPENED: Speculative high-risk window active for 2 rounds!`,
+          text: `🚨 SIREN ALERT: High-Risk Stock Exchange Opened! Active for ${randomDuration} round${randomDuration > 1 ? 's' : ''}!`,
         };
 
-        audio.playEventNotification();
+        audio.playStockMarketSiren();
 
         roundEvolutionState = {
           ...roundEvolutionState,

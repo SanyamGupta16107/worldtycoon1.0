@@ -202,19 +202,43 @@ export interface AuctionState {
   log: string[];
 }
 
+export interface StockCompany {
+  id: string;
+  ticker: string;
+  name: string;
+  sector: 'tech' | 'energy' | 'finance' | 'luxury' | 'logistics' | 'agri' | 'manufacturing';
+  sectorLabel: string;
+  icon: string;
+  description: string;
+  volatility: 'HIGH' | 'EXTREME' | 'SPECULATIVE';
+  baseMultiplier: number;
+  color: string;
+}
+
+export interface PlayerStockInvestment {
+  companyId: string;
+  amount: number;
+}
+
 export interface StockMarketOutcome {
   playerId: string;
   playerName: string;
+  companyId: string;
+  companyName: string;
+  companyTicker: string;
+  companyIcon: string;
   invested: number;
   returned: number;
   multiplier: number;
   isWin: boolean;
+  headline: string;
 }
 
 export interface StockMarketState {
   isOpen: boolean;
   roundsRemaining: number;
-  investments: Record<string, number>; // playerId -> invested amount
+  totalDurationRounds: number;
+  investments: Record<string, PlayerStockInvestment[]>; // playerId -> list of investments in companies
   lastOutcome: StockMarketOutcome[] | null;
 }
 
