@@ -771,22 +771,13 @@ export const App: React.FC = () => {
       )}
 
       {/* 4. High-Risk Stock Market Modal */}
-      {(gameState.status === 'STOCK_MARKET_WINDOW' || isStockModalOpen) && (
+      {(isStockModalOpen || (gameState.stockMarket.lastOutcome && gameState.stockMarket.lastOutcome.length > 0)) && (
         <StockMarketModal
           gameState={gameState}
+          myPlayer={myPlayer}
           onInvest={handleInvestStockMarket}
           onDismiss={() => {
             setIsStockModalOpen(false);
-            if (gameState.status === 'STOCK_MARKET_WINDOW') {
-              updateAndBroadcast((prev) => ({
-                ...prev,
-                status: 'ROLL_REQUIRED',
-                stockMarket: {
-                  ...prev.stockMarket,
-                  lastOutcome: null,
-                },
-              }));
-            }
           }}
         />
       )}

@@ -762,7 +762,7 @@ export function endTurnAction(state: GameState): GameState {
           ...roundEvolutionState,
           players: updatedPlayers,
           stockMarket: stockState,
-          status: outcomes.length > 0 ? 'STOCK_MARKET_WINDOW' : 'ROLL_REQUIRED',
+          status: 'ROLL_REQUIRED',
           logs: [logEntry, ...roundEvolutionState.logs.slice(0, 99)],
         };
       }
@@ -787,7 +787,7 @@ export function endTurnAction(state: GameState): GameState {
         roundEvolutionState = {
           ...roundEvolutionState,
           stockMarket: stockState,
-          status: 'STOCK_MARKET_WINDOW',
+          status: 'ROLL_REQUIRED',
           logs: [logEntry, ...roundEvolutionState.logs.slice(0, 99)],
         };
       }
@@ -820,7 +820,7 @@ export function endTurnAction(state: GameState): GameState {
     ...roundEvolutionState,
     round: nextRound,
     turnIndex: nextTurn,
-    status: roundEvolutionState.status === 'STOCK_MARKET_WINDOW' ? 'STOCK_MARKET_WINDOW' : 'ROLL_REQUIRED',
+    status: 'ROLL_REQUIRED',
     pendingSpace: null,
     activeEvent: null,
     diceRolling: false,

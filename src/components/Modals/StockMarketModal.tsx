@@ -6,29 +6,32 @@ import { TrendingUp, Flame, AlertTriangle, ArrowRight, DollarSign, Zap, Skull, T
 
 interface StockMarketModalProps {
   gameState: GameState;
+  myPlayer?: Player;
   onInvest: (playerId: string, amount: number) => void;
   onDismiss: () => void;
 }
 
 export const StockMarketModal: React.FC<StockMarketModalProps> = ({
   gameState,
+  myPlayer,
   onInvest,
   onDismiss,
 }) => {
   const stockState = gameState.stockMarket;
   const isPassAndPlay = gameState.config.mode === 'pass_and_play';
-  const humanPlayer = isPassAndPlay
+  
+  const activePlayer = isPassAndPlay
     ? gameState.players[gameState.turnIndex]
-    : gameState.players.find(p => !p.isAI) || gameState.players[0];
+    : myPlayer || gameState.players[0];
 
-  const currentInvested = humanPlayer ? stockState.investments[humanPlayer.id] || 0 : 0;
-  const availableCash = humanPlayer ? humanPlayer.money : 0;
+  const currentInvested = activePlayer ? stockState.investments[activePlayer.id] || 0 : 0;
+  const availableCash = activePlayer ? activePlayer.money : 0;
 
-  const [investAmount, setInvestAmount] = useState<number>(() => Math.round(availableCash * 0.25));
+  const [investAmount, setInvestAmount] = useState<number>(() => Math.min(availableCash, Math.round(availableCash * 0.25)));
 
   const handleConfirmInvestment = () => {
-    if (!humanPlayer || investAmount <= 0) return;
-    onInvest(humanPlayer.id, investAmount);
+    if (!activePlayer || investAmount <= 0) return;
+    onInvest(activePlayer.id, investAmount);
     audio.playCashRegister();
     onDismiss();
   };
@@ -49,7 +52,7 @@ export const StockMarketModal: React.FC<StockMarketModalProps> = ({
         <p className="text-xs font-mono text-slate-400 text-center mb-5">
           {outcomes
             ? 'The high-volatility trading window has closed. Inspect empire outcomes below.'
-            : 'Extreme risk exchange active for 2 rounds. Rags to riches or complete liquidity wipeout!'}
+            : `Extreme risk exchange active (${stockState.roundsRemaining} rounds remaining). Rags to riches or complete wipeout!`}
         </p>
 
         {/* OUTCOMES VIEW (IF MARKET JUST CLOSED) */}
@@ -97,7 +100,7 @@ export const StockMarketModal: React.FC<StockMarketModalProps> = ({
             </button>
           </div>
         ) : (
-          /* ACTIVE INVESTMENT WINDOW */
+          /* ACTIVE INVESTMENT WINDOW FOR ACTIVE PLAYER */
           <div className="w-full space-y-4 font-mono text-xs">
             {/* Risk Warnings */}
             <div className="p-3.5 rounded-2xl bg-amber-950/20 border border-amber-500/40 text-amber-300 space-y-1.5">
@@ -112,14 +115,14 @@ export const StockMarketModal: React.FC<StockMarketModalProps> = ({
               </p>
             </div>
 
-            {/* Current Position */}
+            {/* Current Player Position */}
             <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800 flex items-center justify-between">
               <div>
-                <span className="text-[9px] text-slate-500 uppercase block font-bold">YOUR ACTIVE STAKE</span>
+                <span className="text-[9px] text-slate-500 uppercase block font-bold">YOUR COMMITTED STAKE ({activePlayer?.name})</span>
                 <span className="text-sm font-black text-amber-300">{formatCurrency(currentInvested)}</span>
               </div>
               <div className="text-right">
-                <span className="text-[9px] text-slate-500 uppercase block font-bold">TREASURY RESERVES</span>
+                <span className="text-[9px] text-slate-500 uppercase block font-bold">YOUR AVAILABLE CASH</span>
                 <span className="text-sm font-black text-emerald-400">{formatCurrency(availableCash)}</span>
               </div>
             </div>
@@ -127,7 +130,7 @@ export const StockMarketModal: React.FC<StockMarketModalProps> = ({
             {/* Investment Amount Slider & Tiers */}
             <div className="space-y-2">
               <div className="flex justify-between text-[10px] text-slate-400 font-bold">
-                <span>CHOOSE INVESTMENT:</span>
+                <span>CHOOSE INVESTMENT AMOUNT:</span>
                 <span className="text-amber-300 font-black text-xs">{formatCurrency(investAmount)}</span>
               </div>
 
@@ -161,7 +164,7 @@ export const StockMarketModal: React.FC<StockMarketModalProps> = ({
                 onClick={onDismiss}
                 className="py-3 px-4 rounded-xl bg-slate-950 border border-slate-800 hover:border-slate-700 text-slate-400 hover:text-white font-bold text-xs uppercase transition-all cursor-pointer"
               >
-                PASS / SKIP
+                CLOSE / SKIP
               </button>
 
               <button
