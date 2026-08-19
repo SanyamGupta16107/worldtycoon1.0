@@ -14,7 +14,7 @@ echo.
 
 echo Adding changes...
 "D:\mingit\cmd\git.exe" add .
-"D:\mingit\cmd\git.exe" commit -m "Update base URL for worldtycoon1.0 and configure GitHub Pages" 2>nul
+"D:\mingit\cmd\git.exe" commit -m "Update GitHub Actions workflow fix and build" 2>nul
 
 echo Pushing main branch to GitHub...
 "D:\mingit\cmd\git.exe" push -u origin main --force
