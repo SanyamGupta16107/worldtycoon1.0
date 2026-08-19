@@ -5,20 +5,19 @@ echo ========================================================
 echo   WORLD TYCOON 1.0 - PUSH TO GITHUB REPOSITORY
 echo ========================================================
 echo.
-echo Please create a new GitHub repository named: WorldTycoon-1.0
-echo at: https://github.com/new
+echo Target Repository: https://github.com/SanyamGupta16107/worldtycoon1.0.git
 echo.
-set /p REPO_URL="Enter your GitHub Repository URL (or press Enter for default): "
-if "%REPO_URL%"=="" set REPO_URL=https://github.com/SanyamGupta16107/WorldTycoon-1.0.git
 
-echo.
-echo Setting remote origin to: %REPO_URL%
 "D:\mingit\cmd\git.exe" remote remove origin 2>nul
-"D:\mingit\cmd\git.exe" remote add origin %REPO_URL%
+"D:\mingit\cmd\git.exe" remote add origin https://github.com/SanyamGupta16107/worldtycoon1.0.git
 "D:\mingit\cmd\git.exe" branch -M main
 
+echo Adding changes...
+"D:\mingit\cmd\git.exe" add .
+"D:\mingit\cmd\git.exe" commit -m "Update base URL for worldtycoon1.0 and configure GitHub Pages" 2>nul
+
 echo Pushing main branch to GitHub...
-"D:\mingit\cmd\git.exe" push -u origin main
+"D:\mingit\cmd\git.exe" push -u origin main --force
 
 echo.
 if %errorlevel% equ 0 (
@@ -27,6 +26,6 @@ if %errorlevel% equ 0 (
     echo ========================================================
 ) else (
     echo.
-    echo If GitHub requested credentials, sign in with your GitHub Personal Access Token.
+    echo If GitHub asks for credentials, enter your GitHub Username and Personal Access Token.
 )
 pause
