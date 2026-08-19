@@ -60,6 +60,7 @@ export const App: React.FC = () => {
   const [isTradeOpen, setIsTradeOpen] = useState<boolean>(false);
   const [isChatOpen, setIsChatOpen] = useState<boolean>(false);
   const [isStockModalOpen, setIsStockModalOpen] = useState<boolean>(false);
+  const [dismissedOutcomeTimestamp, setDismissedOutcomeTimestamp] = useState<number | null>(null);
   const [inspectedSpaceIndex, setInspectedSpaceIndex] = useState<number | null>(null);
   const [isRollingAnimation, setIsRollingAnimation] = useState<boolean>(false);
 
@@ -772,13 +773,16 @@ export const App: React.FC = () => {
       )}
 
       {/* 4. High-Risk Stock Market Modal */}
-      {(isStockModalOpen || (gameState.stockMarket.lastOutcome && gameState.stockMarket.lastOutcome.length > 0)) && (
+      {(isStockModalOpen || (gameState.stockMarket.lastOutcome && gameState.stockMarket.lastOutcome.timestamp !== dismissedOutcomeTimestamp)) && (
         <StockMarketModal
           gameState={gameState}
           myPlayer={myPlayer}
           onInvest={handleInvestStockMarket}
           onDismiss={() => {
             setIsStockModalOpen(false);
+            if (gameState.stockMarket.lastOutcome) {
+              setDismissedOutcomeTimestamp(gameState.stockMarket.lastOutcome.timestamp);
+            }
           }}
         />
       )}

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { GameState, Player, StockCompany, StockMarketOutcome } from '../../types';
+import { GameState, Player, StockCompany, StockMarketResolution } from '../../types';
 import { STOCK_COMPANIES } from '../../data/stockData';
 import { formatCurrency } from '../../utils/formatting';
 import { audio } from '../../game/audioEngine';
@@ -14,6 +14,12 @@ import {
   CheckCircle2,
   Building2,
   PieChart,
+  ShieldCheck,
+  Globe2,
+  User,
+  ArrowUpRight,
+  ArrowDownRight,
+  Coins,
 } from 'lucide-react';
 
 interface StockMarketModalProps {
@@ -42,6 +48,7 @@ export const StockMarketModal: React.FC<StockMarketModalProps> = ({
 
   const [selectedCompanyId, setSelectedCompanyId] = useState<string>(STOCK_COMPANIES[0].id);
   const [investAmount, setInvestAmount] = useState<number>(0);
+  const [reportTab, setReportTab] = useState<'all_stocks' | 'my_portfolio'>('all_stocks');
 
   const selectedCompany = STOCK_COMPANIES.find((c) => c.id === selectedCompanyId) || STOCK_COMPANIES[0];
   const existingStakeInSelected = playerInvestments.find((i) => i.companyId === selectedCompany.id)?.amount || 0;
@@ -52,7 +59,13 @@ export const StockMarketModal: React.FC<StockMarketModalProps> = ({
     setInvestAmount(0);
   };
 
-  const outcomes = stockState.lastOutcome;
+  const outcomeResolution = stockState.lastOutcome as StockMarketResolution | null;
+  const myPlayerOutcomes = outcomeResolution
+    ? outcomeResolution.playerOutcomes.filter((p) => p.playerId === activePlayer?.id)
+    : [];
+  const totalMyReturned = myPlayerOutcomes.reduce((sum, o) => sum + o.returned, 0);
+  const totalMyInvested = myPlayerOutcomes.reduce((sum, o) => sum + o.invested, 0);
+  const totalMyNetProfit = totalMyReturned - totalMyInvested;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/90 backdrop-blur-xl animate-in fade-in duration-200 select-none">
@@ -63,10 +76,10 @@ export const StockMarketModal: React.FC<StockMarketModalProps> = ({
         </div>
 
         <h2 className="text-xl sm:text-2xl font-black text-white uppercase font-display tracking-tight text-center">
-          {outcomes ? 'MARKET RESOLUTION REPORT' : 'SOVEREIGN ENTERPRISE EXCHANGE'}
+          {outcomeResolution ? 'MARKET RESOLUTION REPORT' : 'SOVEREIGN ENTERPRISE EXCHANGE'}
         </h2>
         <p className="text-[11px] sm:text-xs font-mono text-slate-400 text-center mb-4 max-w-xl">
-          {outcomes
+          {outcomeResolution
             ? 'The high-volatility trading window has closed. Inspect individual enterprise returns and outcomes below.'
             : `Exchange open for ${stockState.roundsRemaining} remaining round${stockState.roundsRemaining > 1 ? 's' : ''}! Pick companies, allocate capital, and brace for extreme market swings.`}
         </p>
@@ -74,63 +87,176 @@ export const StockMarketModal: React.FC<StockMarketModalProps> = ({
         {/* ----------------------------------------------------
             VIEW 1: RESOLUTION REPORT (IF MARKET JUST CLOSED)
         ---------------------------------------------------- */}
-        {outcomes ? (
-          <div className="w-full space-y-3 font-mono text-xs mb-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {outcomes.map((out, idx) => (
-                <div
-                  key={`${out.playerId}-${out.companyId}-${idx}`}
-                  className={`p-3.5 rounded-2xl border flex flex-col justify-between gap-2.5 ${
-                    out.isWin
-                      ? 'bg-emerald-950/30 border-emerald-500/50 text-emerald-300 shadow-glow-emerald'
-                      : 'bg-rose-950/30 border-rose-500/50 text-rose-300'
-                  }`}
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-2.5">
-                      <span className="text-2xl">{out.companyIcon}</span>
-                      <div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-black text-white text-xs">{out.companyTicker}</span>
-                          <span className="text-[9px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-300">
-                            {out.playerName}
-                          </span>
+        {outcomeResolution ? (
+          <div className="w-full space-y-4 font-mono text-xs">
+            {/* View Mode Toggle: All 7 Stocks vs Your Portfolio */}
+            <div className="grid grid-cols-2 gap-2 p-1 rounded-2xl bg-slate-950/90 border border-slate-800">
+              <button
+                onClick={() => setReportTab('all_stocks')}
+                className={`py-2 px-3 rounded-xl font-black text-xs uppercase flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                  reportTab === 'all_stocks'
+                    ? 'bg-amber-500 text-slate-950 shadow-glow-amber'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Globe2 className="w-4 h-4" /> ALL 7 STOCKS MARKET INDEX
+              </button>
+
+              <button
+                onClick={() => setReportTab('my_portfolio')}
+                className={`py-2 px-3 rounded-xl font-black text-xs uppercase flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                  reportTab === 'my_portfolio'
+                    ? 'bg-amber-500 text-slate-950 shadow-glow-amber'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <User className="w-4 h-4" /> YOUR EMPIRE PAYOUT ({activePlayer?.name})
+              </button>
+            </div>
+
+            {/* TAB 1: ALL 7 STOCKS PERFORMANCE */}
+            {reportTab === 'all_stocks' && (
+              <div className="space-y-2.5">
+                <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                  GLOBAL ENTERPRISE SECTOR RESULTS:
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 max-h-[48vh] overflow-y-auto pr-1">
+                  {outcomeResolution.companies.map((comp) => {
+                    const isGain = comp.multiplier >= 1.0;
+                    return (
+                      <div
+                        key={comp.companyId}
+                        className={`p-3 rounded-2xl border flex flex-col justify-between gap-2 ${
+                          isGain
+                            ? 'bg-emerald-950/25 border-emerald-500/40 text-emerald-300'
+                            : 'bg-rose-950/25 border-rose-500/40 text-rose-300'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="text-2xl">{comp.companyIcon}</span>
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-black text-white text-xs">${comp.companyTicker}</span>
+                                <span className="text-[9px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-400">
+                                  {comp.sectorLabel}
+                                </span>
+                              </div>
+                              <span className="text-[10px] text-slate-300 block truncate max-w-[170px]">
+                                {comp.companyName}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="text-right shrink-0">
+                            <div className="flex items-center gap-1 font-black text-sm">
+                              {isGain ? (
+                                <ArrowUpRight className="w-4 h-4 text-emerald-400 inline" />
+                              ) : (
+                                <ArrowDownRight className="w-4 h-4 text-rose-400 inline" />
+                              )}
+                              <span>
+                                {isGain
+                                  ? `+${((comp.multiplier - 1) * 100).toFixed(0)}%`
+                                  : `-${((1 - comp.multiplier) * 100).toFixed(0)}%`}
+                              </span>
+                            </div>
+                            <span className="text-[9px] text-slate-400">Multiplier: {comp.multiplier}x</span>
+                          </div>
                         </div>
-                        <span className="text-[10px] text-slate-400 block">{out.companyName}</span>
+
+                        <div className="p-2 rounded-xl bg-black/50 text-[10px] text-slate-300 leading-snug">
+                          {comp.headline}
+                        </div>
                       </div>
-                    </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
-                    <div className="text-right">
-                      <span className="text-sm font-black block">
-                        {out.multiplier >= 1.0
-                          ? `+${((out.multiplier - 1) * 100).toFixed(0)}% GAIN`
-                          : `-${((1 - out.multiplier) * 100).toFixed(0)}% CRASH`}
-                      </span>
-                      <span className="text-[10px] text-slate-400">
-                        Invested: {formatCurrency(out.invested)}
-                      </span>
-                    </div>
+            {/* TAB 2: YOUR EMPIRE'S PAYOUT & BREAKDOWN */}
+            {reportTab === 'my_portfolio' && (
+              <div className="space-y-3">
+                {/* Net Summary Card */}
+                <div className="p-3.5 rounded-2xl bg-slate-950/90 border border-slate-800 grid grid-cols-3 gap-2 text-center">
+                  <div>
+                    <span className="text-[9px] text-slate-500 uppercase block font-bold">TOTAL CAPITAL INVESTED</span>
+                    <span className="text-sm font-black text-white">{formatCurrency(totalMyInvested)}</span>
                   </div>
-
-                  <div className="p-2 rounded-xl bg-black/40 text-[10px] text-slate-300 leading-snug">
-                    {out.headline}
+                  <div>
+                    <span className="text-[9px] text-slate-500 uppercase block font-bold">TOTAL CAPITAL RETURNED</span>
+                    <span className="text-sm font-black text-cyan-400">{formatCurrency(totalMyReturned)}</span>
                   </div>
-
-                  <div className="flex items-center justify-between pt-1 border-t border-slate-800/80 text-[11px] font-bold">
-                    <span className="text-slate-400">Total Payout:</span>
-                    <span className="font-mono font-black text-white text-xs">
-                      {formatCurrency(out.returned)}
+                  <div>
+                    <span className="text-[9px] text-slate-500 uppercase block font-bold">NET REALISED PROFIT</span>
+                    <span
+                      className={`text-sm font-black ${
+                        totalMyNetProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                      }`}
+                    >
+                      {totalMyNetProfit >= 0 ? `+${formatCurrency(totalMyNetProfit)}` : `-${formatCurrency(Math.abs(totalMyNetProfit))}`}
                     </span>
                   </div>
                 </div>
-              ))}
-            </div>
 
+                {/* Holdings Outcomes */}
+                {myPlayerOutcomes.length === 0 ? (
+                  <div className="p-6 rounded-2xl bg-slate-950/80 border border-slate-800 text-center space-y-2">
+                    <ShieldCheck className="w-8 h-8 text-emerald-400 mx-auto" />
+                    <h4 className="font-bold text-white text-xs uppercase">Safe Cash Reserves Maintained</h4>
+                    <p className="text-[10px] text-slate-400 max-w-sm mx-auto">
+                      You did not invest capital into any enterprise during this high-risk cycle. Your liquid treasury remained 100% protected.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-2 max-h-[38vh] overflow-y-auto pr-1">
+                    {myPlayerOutcomes.map((out, idx) => {
+                      const isGain = out.profit >= 0;
+                      return (
+                        <div
+                          key={`${out.companyId}-${idx}`}
+                          className={`p-3 rounded-2xl border flex items-center justify-between ${
+                            isGain
+                              ? 'bg-emerald-950/30 border-emerald-500/50 text-emerald-300'
+                              : 'bg-rose-950/30 border-rose-500/50 text-rose-300'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <span className="text-2xl">{out.companyIcon}</span>
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-black text-white text-xs">${out.companyTicker}</span>
+                                <span className="text-[10px] text-slate-400">{out.companyName}</span>
+                              </div>
+                              <div className="text-[9px] text-slate-400">
+                                Allocated: {formatCurrency(out.invested)} @ {out.multiplier}x
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="text-right">
+                            <span className="text-xs font-black block">
+                              {isGain ? `+${formatCurrency(out.profit)}` : `-${formatCurrency(Math.abs(out.profit))}`}
+                            </span>
+                            <span className="text-[10px] text-slate-300 font-bold">
+                              Payout: {formatCurrency(out.returned)}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Close Report Action */}
             <button
               onClick={onDismiss}
-              className="w-full py-3.5 px-6 rounded-2xl bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white font-extrabold text-xs uppercase tracking-wider shadow-glow-amber transition-all cursor-pointer mt-4"
+              className="w-full py-3.5 px-6 rounded-2xl bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white font-extrabold text-xs uppercase tracking-wider shadow-glow-amber transition-all cursor-pointer mt-2"
             >
-              Acknowledge Market Report & Return to Board
+              Acknowledge & Return to Command
             </button>
           </div>
         ) : (
@@ -196,7 +322,7 @@ export const StockMarketModal: React.FC<StockMarketModalProps> = ({
 
                       <div>
                         <div className="flex items-center gap-1">
-                          <span className="font-black text-white text-xs">{company.ticker}</span>
+                          <span className="font-black text-white text-xs">${company.ticker}</span>
                           <span className="text-[9px] text-slate-400 truncate">{company.name}</span>
                         </div>
                         <div className="text-[8px] text-cyan-400 font-bold truncate">{company.sectorLabel}</div>

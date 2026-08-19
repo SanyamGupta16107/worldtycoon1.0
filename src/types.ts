@@ -220,6 +220,38 @@ export interface PlayerStockInvestment {
   amount: number;
 }
 
+export interface CompanyMarketReport {
+  companyId: string;
+  companyName: string;
+  companyTicker: string;
+  companyIcon: string;
+  sectorLabel: string;
+  multiplier: number;
+  isWin: boolean;
+  headline: string;
+  color: string;
+}
+
+export interface PlayerOutcomeReport {
+  playerId: string;
+  playerName: string;
+  companyId: string;
+  companyName: string;
+  companyTicker: string;
+  companyIcon: string;
+  invested: number;
+  returned: number;
+  profit: number;
+  multiplier: number;
+  isWin: boolean;
+}
+
+export interface StockMarketResolution {
+  companies: CompanyMarketReport[];
+  playerOutcomes: PlayerOutcomeReport[];
+  timestamp: number;
+}
+
 export interface StockMarketOutcome {
   playerId: string;
   playerName: string;
@@ -239,7 +271,7 @@ export interface StockMarketState {
   roundsRemaining: number;
   totalDurationRounds: number;
   investments: Record<string, PlayerStockInvestment[]>; // playerId -> list of investments in companies
-  lastOutcome: StockMarketOutcome[] | null;
+  lastOutcome: StockMarketResolution | null;
 }
 
 export type GameActionState = 

@@ -5,12 +5,15 @@ import {
   AuctionState,
   ChatMessage,
   COLOR_OPTIONS,
+  CompanyMarketReport,
   GameConfig,
   GameLog,
   GameState,
   Player,
+  PlayerOutcomeReport,
   PlayerStockInvestment,
   StockMarketOutcome,
+  StockMarketResolution,
   TradeOffer,
 } from '../types';
 import { calculatePlayerNetWorth, calculatePropertyMarketValue } from '../utils/calculations';
@@ -556,7 +559,7 @@ export function handleSpaceLanding(state: GameState, playerIndex: number): GameS
         const { newState } = executePropertyPurchase(state, player.id, space.index);
         return { ...newState, isMovingPawn: false };
       } else {
-        return startAuctionAction(state, space.index, null);
+        return { ...state, status: 'TURN_END', pendingSpace: null, isMovingPawn: false };
       }
     }
   }
@@ -620,11 +623,6 @@ export function buyPropertyAction(state: GameState, playerId: string, spaceIndex
 }
 
 export function passPropertyAction(state: GameState): GameState {
-  const pending = state.pendingSpace;
-  if (pending && (pending.type === 'city' || pending.type === 'transport')) {
-    return startAuctionAction(state, pending.index, null);
-  }
-
   return {
     ...state,
     status: 'TURN_END',
@@ -723,7 +721,62 @@ export function endTurnAction(state: GameState): GameState {
         roundEvolutionState = { ...roundEvolutionState, stockMarket: stockState };
       } else {
         // Stock Market Closes & Resolves with Sector Dynamics & High Volatility!
-        const outcomes: StockMarketOutcome[] = [];
+        // 1. Compute market effect for ALL 7 companies
+        const companyReports: CompanyMarketReport[] = STOCK_COMPANIES.map(company => {
+          let baseFactor = 1.0;
+          const condition = roundEvolutionState.market.condition;
+
+          if (condition === 'GROWING') baseFactor += 0.25;
+          else if (condition === 'STABLE') baseFactor += 0.10;
+          else if (condition === 'VOLATILE') baseFactor += (Math.random() > 0.5 ? 0.35 : -0.35);
+          else if (condition === 'RECESSION') baseFactor -= 0.20;
+          else if (condition === 'CRASH') {
+            if (company.sector === 'agri') baseFactor += 0.15; // Defensive food hedge
+            else baseFactor -= 0.35;
+          }
+
+          const roll = Math.random();
+          let multiplier = 1.0;
+          let isWin = true;
+          let headline = '';
+
+          if (roll < 0.28) {
+            // MOONSHOT (+200% to +500%)
+            multiplier = Number((baseFactor * (Math.random() * 3.0 + 3.0)).toFixed(2));
+            isWin = true;
+            headline = `🚀 Record contracts & breakthrough delivers a massive moonshot rally for ${company.name}!`;
+          } else if (roll < 0.62) {
+            // STRONG BULL RALLY (+40% to +130%)
+            multiplier = Number((baseFactor * (Math.random() * 0.9 + 1.4)).toFixed(2));
+            isWin = true;
+            headline = `📈 Bullish institutional capital accumulation pushes ${company.ticker} higher!`;
+          } else if (roll < 0.76) {
+            // SIDEWAYS (-20% to +20%)
+            multiplier = Number((baseFactor * (Math.random() * 0.4 + 0.8)).toFixed(2));
+            isWin = multiplier >= 1.0;
+            headline = `⚖️ High-frequency algorithmic consolidation across ${company.sectorLabel}.`;
+          } else {
+            // LIQUIDITY MELTDOWN (-60% to -100%)
+            multiplier = Number((Math.random() * 0.4).toFixed(2)); // 0.0x to 0.4x
+            isWin = false;
+            headline = `💀 Severe liquidity crunch / short attack triggers heavy crash for ${company.ticker}!`;
+          }
+
+          return {
+            companyId: company.id,
+            companyName: company.name,
+            companyTicker: company.ticker,
+            companyIcon: company.icon,
+            sectorLabel: company.sectorLabel,
+            multiplier,
+            isWin,
+            headline,
+            color: company.color,
+          };
+        });
+
+        // 2. Compute matching payouts for each player who participated
+        const playerOutcomes: PlayerOutcomeReport[] = [];
         let updatedPlayers = [...roundEvolutionState.players];
 
         Object.entries(stockState.investments).forEach(([playerId, investmentsList]) => {
@@ -731,50 +784,9 @@ export function endTurnAction(state: GameState): GameState {
           if (player && Array.isArray(investmentsList) && investmentsList.length > 0) {
             investmentsList.forEach(inv => {
               if (inv.amount <= 0) return;
-              const company = STOCK_COMPANIES.find(c => c.id === inv.companyId) || STOCK_COMPANIES[0];
-
-              // Determine company market behavior based on sector + market condition + shocks + volatility
-              let baseFactor = 1.0;
-              const condition = roundEvolutionState.market.condition;
-
-              if (condition === 'GROWING') baseFactor += 0.25;
-              else if (condition === 'STABLE') baseFactor += 0.10;
-              else if (condition === 'VOLATILE') baseFactor += (Math.random() > 0.5 ? 0.3 : -0.3);
-              else if (condition === 'RECESSION') baseFactor -= 0.20;
-              else if (condition === 'CRASH') {
-                if (company.sector === 'agri') baseFactor += 0.15; // Defensive food hedge
-                else baseFactor -= 0.35;
-              }
-
-              // Extreme Volatility outcome roll (Moonshot, Bull, Neutral, or Meltdown)
-              const roll = Math.random();
-              let multiplier = 1.0;
-              let isWin = true;
-              let headline = '';
-
-              if (roll < 0.28) {
-                // 1. MOONSHOT RALLY (+200% to +500%)
-                multiplier = Number((baseFactor * (Math.random() * 3.0 + 3.0)).toFixed(2));
-                isWin = true;
-                headline = `🚀 Record quantum breakthrough / contract delivers massive moonshot rally for ${company.name}!`;
-              } else if (roll < 0.62) {
-                // 2. STRONG BULL RALLY (+40% to +130%)
-                multiplier = Number((baseFactor * (Math.random() * 0.9 + 1.4)).toFixed(2));
-                isWin = true;
-                headline = `📈 Bullish sovereign institutional accumulation pushes ${company.ticker} higher!`;
-              } else if (roll < 0.76) {
-                // 3. SIDEWAYS CHOP (-20% to +20%)
-                multiplier = Number((baseFactor * (Math.random() * 0.4 + 0.8)).toFixed(2));
-                isWin = multiplier >= 1.0;
-                headline = `⚖️ High-frequency algorithmic consolidation across ${company.sectorLabel}.`;
-              } else {
-                // 4. LIQUIDITY MELTDOWN (-60% to -100%)
-                multiplier = Number((Math.random() * 0.4).toFixed(2)); // 0.0x to 0.4x
-                isWin = false;
-                headline = `💀 Severe liquidity crunch / short attack triggers severe crash for ${company.ticker}!`;
-              }
-
-              const returned = Math.round(inv.amount * multiplier);
+              const report = companyReports.find(r => r.companyId === inv.companyId) || companyReports[0];
+              const returned = Math.round(inv.amount * report.multiplier);
+              const profit = returned - inv.amount;
 
               updatedPlayers = updatedPlayers.map(p => {
                 if (p.id === playerId) {
@@ -783,25 +795,25 @@ export function endTurnAction(state: GameState): GameState {
                     money: p.money + returned,
                     stats: {
                       ...p.stats,
-                      stockMarketProfit: p.stats.stockMarketProfit + (returned - inv.amount),
+                      stockMarketProfit: p.stats.stockMarketProfit + profit,
                     },
                   };
                 }
                 return p;
               });
 
-              outcomes.push({
+              playerOutcomes.push({
                 playerId,
                 playerName: player.name,
-                companyId: company.id,
-                companyName: company.name,
-                companyTicker: company.ticker,
-                companyIcon: company.icon,
+                companyId: report.companyId,
+                companyName: report.companyName,
+                companyTicker: report.companyTicker,
+                companyIcon: report.companyIcon,
                 invested: inv.amount,
                 returned,
-                multiplier,
-                isWin,
-                headline,
+                profit,
+                multiplier: report.multiplier,
+                isWin: report.isWin,
               });
             });
           }
@@ -811,7 +823,11 @@ export function endTurnAction(state: GameState): GameState {
         stockState.roundsRemaining = 0;
         stockState.totalDurationRounds = 0;
         stockState.investments = {};
-        stockState.lastOutcome = outcomes.length > 0 ? outcomes : null;
+        stockState.lastOutcome = {
+          companies: companyReports,
+          playerOutcomes,
+          timestamp: Date.now(),
+        };
 
         const logEntry: GameLog = {
           id: `log-stock-close-${Date.now()}`,
