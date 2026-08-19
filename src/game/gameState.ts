@@ -209,17 +209,18 @@ export function createInitialGameState(userConfig: Partial<GameConfig> = {}): Ga
  */
 export function addMultiplayerPeer(
   state: GameState,
+  playerId: string,
   peerId: string,
   name: string,
   color: Player['color'],
   avatar: string
 ): GameState {
-  if (state.players.some(p => p.peerId === peerId || p.id === peerId) || state.players.length >= 4) {
+  if (state.players.some(p => p.id === playerId || (peerId && p.peerId === peerId)) || state.players.length >= 4) {
     return state;
   }
 
   const newPlayer: Player = {
-    id: peerId,
+    id: playerId,
     peerId,
     name: name.toUpperCase() || `EMPIRE ${state.players.length + 1}`,
     color,

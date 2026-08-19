@@ -293,7 +293,7 @@ export interface GameState {
 
 export type NetworkMessage = 
   | { type: 'hello'; room: string }
-  | { type: 'join'; name: string; color: PlayerColor; avatar: string }
+  | { type: 'join'; playerId: string; name: string; color: PlayerColor; avatar: string }
   | { type: 'state'; state: GameState; myId: string }
   | { type: 'update'; state: GameState }
   | { type: 'action'; action: string; payload?: Record<string, unknown> }

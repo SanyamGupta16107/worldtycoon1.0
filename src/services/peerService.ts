@@ -21,13 +21,13 @@ export class PeerNetwork {
   private connections = new Map<string, DataConnection>();
   private broadcastChannel: BroadcastChannel | null = null;
 
-  public myId: string | null = null;
+  public myPeerId: string | null = null;
   public isHost = false;
   public roomCode: string = '';
 
-  private onStateCallback?: (state: GameState, myId: string) => void;
-  private onActionCallback?: (fromPeer: string, action: string, payload: Record<string, unknown>) => void;
-  private onPlayerJoinCallback?: (peerId: string, name: string, color: PlayerColor, avatar: string) => void;
+  private onStateCallback?: (state: GameState) => void;
+  private onActionCallback?: (fromPlayerId: string, action: string, payload: Record<string, unknown>) => void;
+  private onPlayerJoinCallback?: (playerId: string, peerId: string, name: string, color: PlayerColor, avatar: string) => void;
   private onPlayerDisconnectCallback?: (peerId: string) => void;
   private onChatCallback?: (chat: ChatMessage) => void;
   private onErrorCallback?: (err: string) => void;
@@ -35,8 +35,8 @@ export class PeerNetwork {
   public initHost(
     roomCode: string,
     onReady: (peerId: string) => void,
-    onPlayerJoin: (peerId: string, name: string, color: PlayerColor, avatar: string) => void,
-    onAction: (fromPeer: string, action: string, payload: Record<string, unknown>) => void,
+    onPlayerJoin: (playerId: string, peerId: string, name: string, color: PlayerColor, avatar: string) => void,
+    onAction: (fromPlayerId: string, action: string, payload: Record<string, unknown>) => void,
     onChat: (chat: ChatMessage) => void,
     onDisconnect: (peerId: string) => void,
     onError: (err: string) => void
@@ -50,15 +50,16 @@ export class PeerNetwork {
     this.onPlayerDisconnectCallback = onDisconnect;
     this.onErrorCallback = onError;
 
-    // Initialize BroadcastChannel for same-browser multi-tab communication fallback
+    // Same-browser multi-tab communication channel
     try {
       this.broadcastChannel = new BroadcastChannel(`wt_channel_${roomCode}`);
       this.broadcastChannel.onmessage = (event) => {
-        const msg = event.data as NetworkMessage & { fromId?: string };
+        const msg = event.data as NetworkMessage & { fromPeer?: string };
         if (msg.type === 'join') {
-          this.onPlayerJoinCallback?.(msg.fromId || 'tab-peer', msg.name, msg.color, msg.avatar);
+          this.onPlayerJoinCallback?.(msg.playerId, msg.fromPeer || 'tab-peer', msg.name, msg.color, msg.avatar);
         } else if (msg.type === 'action') {
-          this.onActionCallback?.(msg.fromId || 'tab-peer', msg.action, (msg.payload || {}) as Record<string, unknown>);
+          const fromId = (msg.payload?.fromPlayerId as string) || msg.fromPeer || 'tab-peer';
+          this.onActionCallback?.(fromId, msg.action, (msg.payload || {}) as Record<string, unknown>);
         } else if (msg.type === 'chat') {
           this.onChatCallback?.(msg.message);
         }
@@ -72,7 +73,7 @@ export class PeerNetwork {
       });
 
       this.peer.on('open', (id) => {
-        this.myId = id;
+        this.myPeerId = id;
         onReady(id);
       });
 
@@ -86,9 +87,10 @@ export class PeerNetwork {
         conn.on('data', (data) => {
           const msg = data as NetworkMessage;
           if (msg.type === 'join') {
-            this.onPlayerJoinCallback?.(conn.peer, msg.name, msg.color, msg.avatar);
+            this.onPlayerJoinCallback?.(msg.playerId, conn.peer, msg.name, msg.color, msg.avatar);
           } else if (msg.type === 'action') {
-            this.onActionCallback?.(conn.peer, msg.action, (msg.payload || {}) as Record<string, unknown>);
+            const fromId = (msg.payload?.fromPlayerId as string) || conn.peer;
+            this.onActionCallback?.(fromId, msg.action, (msg.payload || {}) as Record<string, unknown>);
           } else if (msg.type === 'chat') {
             this.onChatCallback?.(msg.message);
             this.broadcastChat(msg.message);
@@ -101,31 +103,32 @@ export class PeerNetwork {
         });
 
         conn.on('error', (err) => {
-          console.error('Host connection peer error:', err);
+          console.error('Host connection error:', err);
         });
       });
 
       this.peer.on('error', (err) => {
-        console.warn('Host peer setup notice:', err);
+        console.warn('Host peer notice:', err);
         if (err.type === 'unavailable-id') {
-          this.onErrorCallback?.('Room code collision. Please create another room code.');
+          this.onErrorCallback?.('Room code is currently in use. Please generate a new room code.');
         } else {
-          this.myId = hostId;
+          this.myPeerId = hostId;
           onReady(hostId);
         }
       });
     } catch {
-      this.myId = hostId;
+      this.myPeerId = hostId;
       onReady(hostId);
     }
   }
 
   public joinRoom(
     roomCode: string,
+    playerId: string,
     playerName: string,
     playerColor: PlayerColor,
     playerAvatar: string,
-    onState: (state: GameState, myId: string) => void,
+    onState: (state: GameState) => void,
     onChat: (chat: ChatMessage) => void,
     onError: (err: string) => void
   ) {
@@ -145,7 +148,7 @@ export class PeerNetwork {
       this.broadcastChannel.onmessage = (event) => {
         const msg = event.data as NetworkMessage;
         if (msg.type === 'state' || msg.type === 'update') {
-          this.onStateCallback?.(msg.state, this.myId || clientPeerId);
+          this.onStateCallback?.(msg.state);
         } else if (msg.type === 'chat') {
           this.onChatCallback?.(msg.message);
         } else if (msg.type === 'error') {
@@ -155,7 +158,8 @@ export class PeerNetwork {
 
       this.broadcastChannel.postMessage({
         type: 'join',
-        fromId: clientPeerId,
+        playerId,
+        fromPeer: clientPeerId,
         name: playerName,
         color: playerColor,
         avatar: playerAvatar,
@@ -166,13 +170,14 @@ export class PeerNetwork {
       this.peer = new Peer(clientPeerId);
 
       this.peer.on('open', (id) => {
-        this.myId = id;
+        this.myPeerId = id;
         const conn = this.peer!.connect(hostId, { reliable: true });
         this.hostConn = conn;
 
         conn.on('open', () => {
           conn.send({
             type: 'join',
+            playerId,
             name: playerName,
             color: playerColor,
             avatar: playerAvatar,
@@ -182,7 +187,7 @@ export class PeerNetwork {
         conn.on('data', (data) => {
           const msg = data as NetworkMessage;
           if (msg.type === 'state' || msg.type === 'update') {
-            this.onStateCallback?.(msg.state, this.myId || id);
+            this.onStateCallback?.(msg.state);
           } else if (msg.type === 'chat') {
             this.onChatCallback?.(msg.message);
           } else if (msg.type === 'error') {
@@ -191,7 +196,7 @@ export class PeerNetwork {
         });
 
         conn.on('close', () => {
-          this.onErrorCallback?.('Host disconnected from simulation room.');
+          this.onErrorCallback?.('Host disconnected from the session.');
         });
 
         conn.on('error', () => {});
@@ -201,7 +206,7 @@ export class PeerNetwork {
         console.warn('Client peer notice:', err);
       });
     } catch {
-      this.myId = clientPeerId;
+      this.myPeerId = clientPeerId;
     }
   }
 
@@ -238,10 +243,7 @@ export class PeerNetwork {
 
     if (this.broadcastChannel) {
       try {
-        this.broadcastChannel.postMessage({
-          ...packet,
-          fromId: this.myId,
-        });
+        this.broadcastChannel.postMessage(packet);
       } catch {}
     }
   }
@@ -307,7 +309,7 @@ export class PeerNetwork {
       } catch {}
       this.peer = null;
     }
-    this.myId = null;
+    this.myPeerId = null;
     this.isHost = false;
   }
 }

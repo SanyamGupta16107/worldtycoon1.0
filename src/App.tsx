@@ -46,6 +46,14 @@ import { Hourglass } from 'lucide-react';
 
 export const App: React.FC = () => {
   const [gameState, setGameState] = useState<GameState>(() => createInitialGameState());
+  const [localPlayerId, setLocalPlayerId] = useState<string>(() => {
+    try {
+      return sessionStorage.getItem('wt_my_player_id') || 'commander';
+    } catch {
+      return 'commander';
+    }
+  });
+
   const [inLobby, setInLobby] = useState<boolean>(true);
   const [inOnlineStaging, setInOnlineStaging] = useState<boolean>(false);
   const [isRulesOpen, setIsRulesOpen] = useState<boolean>(false);
@@ -57,6 +65,9 @@ export const App: React.FC = () => {
 
   const gameStateRef = useRef<GameState>(gameState);
   gameStateRef.current = gameState;
+
+  const localPlayerIdRef = useRef<string>(localPlayerId);
+  localPlayerIdRef.current = localPlayerId;
 
   // Broadcast state to all connected peers whenever host updates state
   const broadcastUpdatedState = useCallback((newState: GameState) => {
@@ -78,19 +89,15 @@ export const App: React.FC = () => {
   // Determine current local player object
   const getMyPlayer = useCallback((): Player | undefined => {
     if (gameState.config.mode === 'online_multiplayer') {
-      if (network.isHost) {
-        return gameState.players[0];
-      }
-      const clientPlayer = gameState.players.find(
-        (p) => p.id === network.myId || p.peerId === network.myId
-      );
-      return clientPlayer || gameState.players[1] || gameState.players[0];
+      const match = gameState.players.find((p) => p.id === localPlayerId);
+      if (match) return match;
+      return network.isHost ? gameState.players[0] : (gameState.players[1] || gameState.players[0]);
     }
     if (gameState.config.mode === 'pass_and_play') {
       return gameState.players[gameState.turnIndex] || gameState.players[0];
     }
     return gameState.players[0];
-  }, [gameState.config.mode, gameState.players, gameState.turnIndex]);
+  }, [gameState.config.mode, gameState.players, gameState.turnIndex, localPlayerId]);
 
   const myPlayer = getMyPlayer();
   const currentPlayer = gameState.players[gameState.turnIndex];
@@ -100,7 +107,7 @@ export const App: React.FC = () => {
     ? true
     : gameState.config.mode === 'solo'
     ? !currentPlayer?.isAI
-    : !!(currentPlayer && myPlayer && (currentPlayer.id === myPlayer.id || currentPlayer.peerId === myPlayer.id));
+    : !!(currentPlayer && myPlayer && currentPlayer.id === myPlayer.id);
 
   const canRoll = isMyTurn && gameState.status === 'ROLL_REQUIRED' && !gameState.isMovingPawn;
 
@@ -112,6 +119,8 @@ export const App: React.FC = () => {
     audio.setMusicMuted(!config.musicEnabled);
     if (config.musicEnabled) audio.startAmbientTrack();
     const initial = createInitialGameState(config);
+    setLocalPlayerId('commander');
+    try { sessionStorage.setItem('wt_my_player_id', 'commander'); } catch {}
     setGameState(initial);
     setInLobby(false);
     setInOnlineStaging(false);
@@ -127,6 +136,8 @@ export const App: React.FC = () => {
       name: playerNames[idx] || p.name,
     }));
     const nextState = { ...initial, players: customizedPlayers };
+    setLocalPlayerId('player-1');
+    try { sessionStorage.setItem('wt_my_player_id', 'player-1'); } catch {}
     setGameState(nextState);
     setInLobby(false);
     setInOnlineStaging(false);
@@ -139,7 +150,12 @@ export const App: React.FC = () => {
     hostAvatar: string
   ) => {
     const roomCode = config.roomCode || 'WT-7X9K';
-    const initial = createInitialGameState({ ...config, myPeerId: 'host-player' });
+    const hostId = `host-${Math.random().toString(36).substring(2, 7)}`;
+    setLocalPlayerId(hostId);
+    try { sessionStorage.setItem('wt_my_player_id', hostId); } catch {}
+
+    const initial = createInitialGameState({ ...config, myPeerId: hostId });
+    initial.players[0].id = hostId;
     initial.players[0].name = hostName;
     initial.players[0].color = hostColor;
     initial.players[0].avatar = hostAvatar;
@@ -154,12 +170,12 @@ export const App: React.FC = () => {
           config: { ...prev.config, myPeerId: peerId },
         }));
       },
-      (peerId, name, color, avatar) => {
+      (playerId, peerId, name, color, avatar) => {
         audio.playClick();
-        updateAndBroadcast((prev) => addMultiplayerPeer(prev, peerId, name, color, avatar));
+        updateAndBroadcast((prev) => addMultiplayerPeer(prev, playerId, peerId, name, color, avatar));
       },
-      (fromPeer, action, payload) => {
-        handleRemoteActionFromPeer(fromPeer, action, payload);
+      (fromPlayerId, action, payload) => {
+        handleRemoteActionFromPeer(fromPlayerId, action, payload);
       },
       (chat) => {
         audio.playClick();
@@ -183,19 +199,18 @@ export const App: React.FC = () => {
     playerColor: PlayerColor,
     playerAvatar: string
   ) => {
+    const clientId = `client-${Math.random().toString(36).substring(2, 7)}`;
+    setLocalPlayerId(clientId);
+    try { sessionStorage.setItem('wt_my_player_id', clientId); } catch {}
+
     network.joinRoom(
       roomCode,
+      clientId,
       playerName,
       playerColor,
       playerAvatar,
-      (receivedState, myId) => {
-        setGameState({
-          ...receivedState,
-          config: {
-            ...receivedState.config,
-            myPeerId: myId,
-          },
-        });
+      (receivedState) => {
+        setGameState(receivedState);
         setInLobby(false);
         if (receivedState.status !== 'LOBBY') {
           setInOnlineStaging(false);
@@ -222,22 +237,28 @@ export const App: React.FC = () => {
   // ----------------------------------------------------
   // REMOTE ACTIONS (HOST AUTHORITATIVE VALIDATION)
   // ----------------------------------------------------
-  const handleRemoteActionFromPeer = (fromPeer: string, action: string, payload: Record<string, unknown> = {}) => {
+  const handleRemoteActionFromPeer = (fromPlayerId: string, action: string, payload: Record<string, unknown> = {}) => {
     const state = gameStateRef.current;
     const acting = state.players[state.turnIndex];
 
     if (action === 'ROLL_DICE') {
-      if (acting && (acting.peerId === fromPeer || acting.id === fromPeer || !fromPeer || fromPeer === 'tab-peer')) {
+      if (acting && (acting.id === fromPlayerId || acting.peerId === fromPlayerId || fromPlayerId === 'tab-peer')) {
         handleRollDice();
       }
     } else if (action === 'BUY_PROPERTY') {
       const spaceIdx = payload.spaceIndex as number;
-      if (acting) updateAndBroadcast((prev) => buyPropertyAction(prev, acting.id, spaceIdx));
+      if (acting && (acting.id === fromPlayerId || acting.peerId === fromPlayerId || fromPlayerId === 'tab-peer')) {
+        updateAndBroadcast((prev) => buyPropertyAction(prev, acting.id, spaceIdx));
+      }
     } else if (action === 'PASS_PROPERTY') {
-      updateAndBroadcast((prev) => passPropertyAction(prev));
+      if (acting && (acting.id === fromPlayerId || acting.peerId === fromPlayerId || fromPlayerId === 'tab-peer')) {
+        updateAndBroadcast((prev) => passPropertyAction(prev));
+      }
     } else if (action === 'DEVELOP_PROPERTY') {
       const spaceIdx = payload.spaceIndex as number;
-      if (acting) updateAndBroadcast((prev) => developPropertyAction(prev, acting.id, spaceIdx));
+      if (acting && (acting.id === fromPlayerId || acting.peerId === fromPlayerId || fromPlayerId === 'tab-peer')) {
+        updateAndBroadcast((prev) => developPropertyAction(prev, acting.id, spaceIdx));
+      }
     } else if (action === 'MORTGAGE_PROPERTY') {
       const spaceIdx = payload.spaceIndex as number;
       if (acting) {
@@ -343,7 +364,7 @@ export const App: React.FC = () => {
         return;
       }
       if (!network.isHost) {
-        network.sendAction('ROLL_DICE');
+        network.sendAction('ROLL_DICE', { fromPlayerId: localPlayerIdRef.current });
         return;
       }
     }
@@ -451,7 +472,7 @@ export const App: React.FC = () => {
   // ----------------------------------------------------
   const handleBuyProperty = (spaceIndex: number) => {
     if (gameState.config.mode === 'online_multiplayer' && !network.isHost) {
-      network.sendAction('BUY_PROPERTY', { spaceIndex });
+      network.sendAction('BUY_PROPERTY', { spaceIndex, fromPlayerId: localPlayerIdRef.current });
       return;
     }
     const currentActing = gameState.players[gameState.turnIndex];
@@ -461,7 +482,7 @@ export const App: React.FC = () => {
 
   const handlePassProperty = () => {
     if (gameState.config.mode === 'online_multiplayer' && !network.isHost) {
-      network.sendAction('PASS_PROPERTY');
+      network.sendAction('PASS_PROPERTY', { fromPlayerId: localPlayerIdRef.current });
       return;
     }
     updateAndBroadcast((prev) => passPropertyAction(prev));
@@ -469,7 +490,7 @@ export const App: React.FC = () => {
 
   const handleUpgradeProperty = (spaceIndex: number) => {
     if (gameState.config.mode === 'online_multiplayer' && !network.isHost) {
-      network.sendAction('DEVELOP_PROPERTY', { spaceIndex });
+      network.sendAction('DEVELOP_PROPERTY', { spaceIndex, fromPlayerId: localPlayerIdRef.current });
       return;
     }
     const currentActing = gameState.players[gameState.turnIndex];
@@ -479,7 +500,7 @@ export const App: React.FC = () => {
 
   const handleMortgageProperty = (spaceIndex: number) => {
     if (gameState.config.mode === 'online_multiplayer' && !network.isHost) {
-      network.sendAction('MORTGAGE_PROPERTY', { spaceIndex });
+      network.sendAction('MORTGAGE_PROPERTY', { spaceIndex, fromPlayerId: localPlayerIdRef.current });
       return;
     }
     const currentActing = gameState.players[gameState.turnIndex];
@@ -492,7 +513,7 @@ export const App: React.FC = () => {
 
   const handleUnmortgageProperty = (spaceIndex: number) => {
     if (gameState.config.mode === 'online_multiplayer' && !network.isHost) {
-      network.sendAction('UNMORTGAGE_PROPERTY', { spaceIndex });
+      network.sendAction('UNMORTGAGE_PROPERTY', { spaceIndex, fromPlayerId: localPlayerIdRef.current });
       return;
     }
     const currentActing = gameState.players[gameState.turnIndex];
@@ -505,7 +526,7 @@ export const App: React.FC = () => {
 
   const handleSellToBank = (spaceIndex: number) => {
     if (gameState.config.mode === 'online_multiplayer' && !network.isHost) {
-      network.sendAction('SELL_PROPERTY', { spaceIndex });
+      network.sendAction('SELL_PROPERTY', { spaceIndex, fromPlayerId: localPlayerIdRef.current });
       return;
     }
     const currentActing = gameState.players[gameState.turnIndex];
@@ -519,7 +540,7 @@ export const App: React.FC = () => {
   const handleStartAuction = (spaceIndex: number) => {
     const currentActing = gameState.players[gameState.turnIndex];
     if (gameState.config.mode === 'online_multiplayer' && !network.isHost) {
-      network.sendAction('START_AUCTION', { spaceIndex, sellerId: currentActing?.id || null });
+      network.sendAction('START_AUCTION', { spaceIndex, sellerId: currentActing?.id || null, fromPlayerId: localPlayerIdRef.current });
       return;
     }
     updateAndBroadcast((prev) => startAuctionAction(prev, spaceIndex, currentActing?.id || null));
@@ -527,7 +548,7 @@ export const App: React.FC = () => {
 
   const handlePlaceAuctionBid = (bidderId: string, amount: number) => {
     if (gameState.config.mode === 'online_multiplayer' && !network.isHost) {
-      network.sendAction('PLACE_BID', { bidderId, amount });
+      network.sendAction('PLACE_BID', { bidderId, amount, fromPlayerId: localPlayerIdRef.current });
       return;
     }
     updateAndBroadcast((prev) => placeAuctionBidAction(prev, bidderId, amount));
@@ -537,7 +558,7 @@ export const App: React.FC = () => {
 
   const handleInvestStockMarket = (playerId: string, amount: number) => {
     if (gameState.config.mode === 'online_multiplayer' && !network.isHost) {
-      network.sendAction('INVEST_STOCK', { playerId, amount });
+      network.sendAction('INVEST_STOCK', { playerId, amount, fromPlayerId: localPlayerIdRef.current });
       return;
     }
     updateAndBroadcast((prev) => investStockMarketAction(prev, playerId, amount));
@@ -545,7 +566,7 @@ export const App: React.FC = () => {
 
   const handleProposeTrade = (trade: TradeOffer) => {
     if (gameState.config.mode === 'online_multiplayer' && !network.isHost) {
-      network.sendAction('PROPOSE_TRADE', { trade });
+      network.sendAction('PROPOSE_TRADE', { trade, fromPlayerId: localPlayerIdRef.current });
       return { accepted: true, message: 'Proposal transmitted across network.' };
     }
     const { nextState, accepted, message } = proposeTradeAction(gameState, trade);
@@ -573,7 +594,7 @@ export const App: React.FC = () => {
   const handleManualEndTurn = () => {
     if (!isMyTurn) return;
     if (gameState.config.mode === 'online_multiplayer' && !network.isHost) {
-      network.sendAction('END_TURN');
+      network.sendAction('END_TURN', { fromPlayerId: localPlayerIdRef.current });
       return;
     }
     updateAndBroadcast((prev) => endTurnAction(prev));
