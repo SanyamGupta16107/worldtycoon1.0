@@ -330,7 +330,8 @@ export const App: React.FC = () => {
             return p;
           });
 
-          if (nextTile === 0) {
+          // Only pass START salary if passing through tile 0
+          if (nextTile === 0 && stepIndex < path.length - 1) {
             const player = prev.players[playerIdx];
             if (player) {
               updatedState = executeStartSalaryBonus(updatedState, player.id);
@@ -340,6 +341,10 @@ export const App: React.FC = () => {
           return {
             ...updatedState,
             players: updatedPlayers,
+            status: 'MOVING',
+            isMovingPawn: true,
+            pendingSpace: null,
+            activeEvent: null,
           };
         });
 

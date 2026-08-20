@@ -59,9 +59,9 @@ export function triggerWorldEvent(state: GameState, activePlayerId: string): { n
 }
 
 /**
- * Draws and applies a Market Shock event
+ * Draws and applies a Market Shock event when a player lands on a Market Shock tile
  */
-export function triggerMarketShock(state: GameState): { newState: GameState; event: GameEvent } {
+export function triggerMarketShock(state: GameState, spaceIndex?: number): { newState: GameState; event: GameEvent } {
   const randomIndex = Math.floor(Math.random() * MARKET_SHOCK_EVENTS.length);
   const event = MARKET_SHOCK_EVENTS[randomIndex];
 
@@ -70,6 +70,20 @@ export function triggerMarketShock(state: GameState): { newState: GameState; eve
 
   const prevHistory = state.market?.history || [1.0];
   const newHistory = [...prevHistory.slice(-9), condConfig.multiplier];
+
+  // Also spawn a targeted regional shock corresponding to the landed region or random region
+  const updatedRegional = { ...state.regionalEvents };
+  const targetSpace = spaceIndex !== undefined ? state.spaces[spaceIndex] : undefined;
+  const targetRegion: RegionGroup = targetSpace?.region || ['middle_east', 'asia', 'europe', 'americas'][Math.floor(Math.random() * 4)] as RegionGroup;
+
+  const regionalCandidates = REGIONAL_EVENTS_POOL.filter(e => e.region === targetRegion);
+  if (regionalCandidates.length > 0) {
+    const pickedRegional = regionalCandidates[Math.floor(Math.random() * regionalCandidates.length)];
+    updatedRegional[targetRegion] = {
+      ...pickedRegional,
+      roundsRemaining: 3,
+    };
+  }
 
   const logEntry: GameLog = {
     id: `log-market-${Date.now()}`,
@@ -93,6 +107,7 @@ export function triggerMarketShock(state: GameState): { newState: GameState; eve
         trend: condConfig.trend,
         history: newHistory,
       },
+      regionalEvents: updatedRegional,
       activeEvent: event,
       status: 'EVENT_NOTIFICATION',
       logs: [logEntry, ...state.logs.slice(0, 99)],
@@ -102,7 +117,7 @@ export function triggerMarketShock(state: GameState): { newState: GameState; eve
 }
 
 /**
- * Advances market rounds and cycles regional events on new round start
+ * Advances market rounds and cycles active regional events on round start (No random background crises)
  */
 export function processRoundEconomyEvolution(state: GameState): GameState {
   let currentMarket = { ...state.market };
@@ -111,7 +126,6 @@ export function processRoundEconomyEvolution(state: GameState): GameState {
   // Decrement market duration
   if (currentMarket.durationRounds > 1) {
     currentMarket.durationRounds -= 1;
-    // Add small fluctuation to chart history
     const jitter = (Math.random() - 0.5) * 0.05;
     currentMarket.history = [...prevHistory.slice(-9), Math.max(0.5, Number((currentMarket.multiplier + jitter).toFixed(2)))];
   } else {
@@ -130,11 +144,10 @@ export function processRoundEconomyEvolution(state: GameState): GameState {
     };
   }
 
-  // Update or spawn regional news
+  // Decrement and expire active regional events (crises only spawn when landing on tiles)
   const updatedRegional = { ...state.regionalEvents };
   const regions: RegionGroup[] = ['europe', 'middle_east', 'asia', 'americas'];
   
-  // Decrement active regional events
   regions.forEach(reg => {
     const active = updatedRegional[reg];
     if (active) {
@@ -145,12 +158,6 @@ export function processRoundEconomyEvolution(state: GameState): GameState {
       }
     }
   });
-
-  // 45% chance to spawn a new regional shock
-  if (Math.random() < 0.45) {
-    const randomNews = REGIONAL_EVENTS_POOL[Math.floor(Math.random() * REGIONAL_EVENTS_POOL.length)];
-    updatedRegional[randomNews.region] = { ...randomNews };
-  }
 
   return {
     ...state,

@@ -584,7 +584,7 @@ export function handleSpaceLanding(state: GameState, playerIndex: number): GameS
 
   // 6. MARKET SHOCK SPACE
   if (space.type === 'market_shock') {
-    const { newState } = triggerMarketShock(state);
+    const { newState } = triggerMarketShock(state, space.index);
     return { ...newState, isMovingPawn: false };
   }
 
