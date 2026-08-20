@@ -3,6 +3,7 @@ import { INITIAL_MARKET_STATE } from '../data/marketData';
 import { STOCK_COMPANIES } from '../data/stockData';
 import {
   AuctionState,
+  AVATAR_OPTIONS,
   ChatMessage,
   COLOR_OPTIONS,
   CompanyMarketReport,
@@ -220,24 +221,35 @@ export function addMultiplayerPeer(
   playerId: string,
   peerId: string,
   name: string,
-  color: Player['color'],
-  avatar: string
+  _preferredColor?: Player['color'],
+  preferredAvatar?: string
 ): GameState {
   if (state.players.some(p => p.id === playerId || (peerId && p.peerId === peerId)) || state.players.length >= 6) {
     return state;
   }
 
+  const playerIdx = state.players.length;
+  // Strictly assign unique color by player slot to prevent any color collisions
+  const assignedColor = COLOR_OPTIONS[playerIdx] || COLOR_OPTIONS[playerIdx % COLOR_OPTIONS.length];
+
+  // Pick unique avatar: if preferred is already taken, pick first unused from AVATAR_OPTIONS
+  const takenAvatars = new Set(state.players.map(p => p.avatar));
+  let assignedAvatar: string = (preferredAvatar && !takenAvatars.has(preferredAvatar)) ? preferredAvatar : '';
+  if (!assignedAvatar) {
+    assignedAvatar = AVATAR_OPTIONS.find(av => !takenAvatars.has(av)) || AVATAR_OPTIONS[playerIdx % AVATAR_OPTIONS.length] || '🌐';
+  }
+
   const newPlayer: Player = {
     id: playerId,
     peerId,
-    name: name.toUpperCase() || `EMPIRE ${state.players.length + 1}`,
-    color,
+    name: name.toUpperCase() || `EMPIRE ${playerIdx + 1}`,
+    color: assignedColor,
     money: state.config.startingCash,
     position: 0,
     properties: [],
     bankrupt: false,
     isAI: false,
-    avatar: avatar || '🌐',
+    avatar: assignedAvatar,
     isReady: true,
     stats: {
       rentCollected: 0,
@@ -258,7 +270,7 @@ export function addMultiplayerPeer(
       timestamp: new Date().toLocaleTimeString(),
       round: state.round,
       type: 'system',
-      text: `📡 ${newPlayer.name} linked to strategic simulation!`,
+      text: `📡 ${newPlayer.avatar} ${newPlayer.name} linked to strategic simulation!`,
     }, ...state.logs.slice(0, 99)],
   };
 }

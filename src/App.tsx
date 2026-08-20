@@ -310,6 +310,15 @@ export const App: React.FC = () => {
         const { nextState } = proposeTradeAction(prev, trade);
         return nextState;
       });
+    } else if (action === 'CHANGE_AVATAR') {
+      const targetId = (payload.playerId as string) || fromPlayerId;
+      const newAvatar = payload.avatar as string;
+      updateAndBroadcast((prev) => {
+        const isTaken = prev.players.some((p) => p.id !== targetId && p.avatar === newAvatar);
+        if (isTaken) return prev;
+        const updated = prev.players.map((p) => (p.id === targetId ? { ...p, avatar: newAvatar } : p));
+        return { ...prev, players: updated };
+      });
     } else if (action === 'END_TURN') {
       updateAndBroadcast((prev) => endTurnAction(prev));
     }
@@ -337,8 +346,8 @@ export const App: React.FC = () => {
             return p;
           });
 
-          // Only pass START salary if passing through tile 0
-          if (nextTile === 0 && stepIndex < path.length - 1) {
+          // Award START salary whenever pawn steps on or lands on tile 0
+          if (nextTile === 0) {
             const player = prev.players[playerIdx];
             if (player) {
               updatedState = executeStartSalaryBonus(updatedState, player.id);
@@ -670,15 +679,33 @@ export const App: React.FC = () => {
     );
   }
 
+  const handleChangeAvatar = (newAvatar: string) => {
+    if (network.isHost) {
+      updateAndBroadcast((prev) => {
+        const isTaken = prev.players.some((p) => p.id !== localPlayerId && p.avatar === newAvatar);
+        if (isTaken) return prev;
+        const updated = prev.players.map((p) => (p.id === localPlayerId ? { ...p, avatar: newAvatar } : p));
+        return { ...prev, players: updated };
+      });
+    } else {
+      network.sendAction('CHANGE_AVATAR', {
+        playerId: localPlayerIdRef.current,
+        avatar: newAvatar,
+      });
+    }
+  };
+
   if (inOnlineStaging) {
     return (
       <OnlineRoomLobby
         gameState={gameState}
         isHost={network.isHost}
         roomCode={gameState.config.roomCode || 'WT-ROOM'}
+        localPlayerId={localPlayerId}
         onStartGame={handleStartOnlineStaging}
         onLeaveRoom={handleResetGame}
         onSendChat={handleSendChat}
+        onChangeAvatar={handleChangeAvatar}
       />
     );
   }

@@ -1,23 +1,27 @@
 import React, { useState, useEffect } from 'react';
-import { GameState, Player } from '../../types';
-import { Globe2, Users, Copy, Check, Play, ShieldAlert, Wifi, MessageSquare, ArrowLeft, Clock } from 'lucide-react';
+import { GameState, Player, AVATAR_OPTIONS } from '../../types';
+import { Globe2, Users, Copy, Check, Play, ShieldAlert, Wifi, MessageSquare, ArrowLeft, Clock, Lock } from 'lucide-react';
 
 interface OnlineRoomLobbyProps {
   gameState: GameState;
   isHost: boolean;
   roomCode: string;
+  localPlayerId?: string;
   onStartGame: () => void;
   onLeaveRoom: () => void;
   onSendChat: (text: string) => void;
+  onChangeAvatar?: (avatar: string) => void;
 }
 
 export const OnlineRoomLobby: React.FC<OnlineRoomLobbyProps> = ({
   gameState,
   isHost,
   roomCode,
+  localPlayerId,
   onStartGame,
   onLeaveRoom,
   onSendChat,
+  onChangeAvatar,
 }) => {
   const [copied, setCopied] = useState<boolean>(false);
   const [chatInput, setChatInput] = useState<string>('');
@@ -49,6 +53,8 @@ export const OnlineRoomLobby: React.FC<OnlineRoomLobbyProps> = ({
 
   const players = gameState.players;
   const canStart = isHost && players.length >= 2;
+  const myPlayer = players.find(p => p.id === localPlayerId) || (isHost ? players[0] : players[1]);
+  const takenAvatars = new Set(players.map(p => p.avatar));
 
   return (
     <div className="min-h-screen w-full bg-[#030611] text-slate-100 flex flex-col items-center justify-center p-4 sm:p-6 relative overflow-hidden font-sans select-none">
@@ -101,14 +107,14 @@ export const OnlineRoomLobby: React.FC<OnlineRoomLobbyProps> = ({
             <span>{isHost ? 'YOU ARE HOST' : 'WAITING FOR HOST'}</span>
           </div>
 
-          <div className="space-y-2 font-mono">
+          <div className="space-y-2 font-mono mb-4">
             {players.map((p, idx) => (
               <div
                 key={p.id}
                 className="p-3 rounded-xl bg-slate-950/90 border border-slate-800 flex items-center justify-between text-xs"
               >
                 <div className="flex items-center gap-3">
-                  <span className="text-lg">{p.avatar}</span>
+                  <span className="text-xl p-1.5 rounded-lg bg-slate-900 border border-slate-800">{p.avatar}</span>
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="font-extrabold text-white uppercase">{p.name}</span>
@@ -118,14 +124,15 @@ export const OnlineRoomLobby: React.FC<OnlineRoomLobbyProps> = ({
                         </span>
                       )}
                     </div>
-                    <span className="text-[9px] text-slate-500">Commander ID: {p.id.slice(0, 10)}</span>
+                    <span className="text-[9px] text-slate-500">Commander #{idx + 1}</span>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-2">
                   <span
-                    className="w-3 h-3 rounded-full"
+                    className="w-3.5 h-3.5 rounded-full border border-white/20 shadow-sm"
                     style={{ backgroundColor: p.color }}
+                    title={`Color: ${p.color}`}
                   />
                   <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
                     READY
@@ -139,10 +146,43 @@ export const OnlineRoomLobby: React.FC<OnlineRoomLobbyProps> = ({
                 key={i}
                 className="p-3 rounded-xl border border-dashed border-slate-800/60 text-center text-slate-600 text-xs font-mono"
               >
-                Waiting for Commander {players.length + i + 1} to join...
+                Waiting for Commander #{players.length + i + 1} to join...
               </div>
             ))}
           </div>
+
+          {/* Real-time Unique Avatar Customizer */}
+          {onChangeAvatar && (
+            <div className="p-3 rounded-2xl bg-slate-950/80 border border-slate-800/90">
+              <div className="text-[10px] font-mono font-bold text-cyan-400 uppercase tracking-wider mb-2 flex items-center justify-between">
+                <span>CHOOSE YOUR AVATAR (UNIQUE PER PLAYER)</span>
+                <span className="text-slate-500 text-[9px]">NO DUPLICATES</span>
+              </div>
+              <div className="grid grid-cols-8 gap-1.5">
+                {AVATAR_OPTIONS.map((av) => {
+                  const isCurrent = myPlayer?.avatar === av;
+                  const isTaken = takenAvatars.has(av) && !isCurrent;
+                  return (
+                    <button
+                      key={av}
+                      disabled={isTaken}
+                      onClick={() => onChangeAvatar(av)}
+                      title={isTaken ? 'Taken by another player' : isCurrent ? 'Your avatar' : 'Select avatar'}
+                      className={`p-2 rounded-xl border text-base flex flex-col items-center justify-center transition-all ${
+                        isCurrent
+                          ? 'bg-cyan-600/40 border-cyan-400 scale-110 shadow-glow-cyan cursor-default'
+                          : isTaken
+                          ? 'bg-slate-950/40 border-slate-900 opacity-25 grayscale cursor-not-allowed'
+                          : 'bg-slate-900/90 border-slate-800 hover:border-cyan-500 hover:scale-105 cursor-pointer'
+                      }`}
+                    >
+                      <span>{av}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Live Lobby Chat */}
