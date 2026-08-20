@@ -166,10 +166,14 @@ export const App: React.FC = () => {
     network.initHost(
       roomCode,
       (peerId) => {
-        setGameState((prev) => ({
-          ...prev,
-          config: { ...prev.config, myPeerId: peerId },
-        }));
+        setGameState((prev) => {
+          const next = {
+            ...prev,
+            config: { ...prev.config, myPeerId: peerId },
+          };
+          network.broadcastState(next);
+          return next;
+        });
       },
       (playerId, peerId, name, color, avatar) => {
         audio.playClick();
@@ -187,6 +191,7 @@ export const App: React.FC = () => {
       },
       (err) => {
         console.warn('Network Host Notice:', err);
+        alert(err);
       }
     );
 
@@ -213,7 +218,9 @@ export const App: React.FC = () => {
       (receivedState) => {
         setGameState(receivedState);
         setInLobby(false);
-        if (receivedState.status !== 'LOBBY') {
+        if (receivedState.status === 'LOBBY') {
+          setInOnlineStaging(true);
+        } else {
           setInOnlineStaging(false);
         }
       },

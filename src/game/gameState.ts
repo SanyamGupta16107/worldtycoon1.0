@@ -177,7 +177,7 @@ export function createInitialGameState(userConfig: Partial<GameConfig> = {}): Ga
 
   const rawState: GameState = {
     config,
-    status: 'ROLL_REQUIRED',
+    status: config.mode === 'online_multiplayer' ? 'LOBBY' : 'ROLL_REQUIRED',
     round: 1,
     turnIndex: 0,
     players,
