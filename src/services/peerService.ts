@@ -1,4 +1,4 @@
-import Peer, { DataConnection } from 'peerjs';
+import mqtt, { MqttClient } from 'mqtt';
 import { GameState, NetworkMessage, PlayerColor, ChatMessage } from '../types';
 
 /**
@@ -23,33 +23,14 @@ export function makeRoomCode(): string {
   return `WT-${result}`;
 }
 
-export function formatHostPeerId(code: string): string {
-  const clean = normalizeRoomCode(code).toLowerCase();
-  return `world-tycoon-host-${clean}`;
-}
-
-const PEER_OPTIONS = {
-  debug: 1,
-  config: {
-    iceServers: [
-      { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' },
-      { urls: 'stun:stun2.l.google.com:19302' },
-      { urls: 'stun:stun3.l.google.com:19302' },
-      { urls: 'stun:stun4.l.google.com:19302' },
-      { urls: 'stun:global.stun.twilio.com:3478' },
-      { urls: 'stun:stun.cloudflare.com:3478' },
-      { urls: 'stun:stun.services.mozilla.com' },
-    ],
-    iceCandidatePoolSize: 10,
-    sdpSemantics: 'unified-plan',
-  },
-};
+const PUBLIC_BROKERS = [
+  'wss://broker.emqx.io:8084/mqtt',
+  'wss://broker.hivemq.com:8884/mqtt',
+  'wss://test.mosquitto.org:8081',
+];
 
 export class PeerNetwork {
-  private peer: Peer | null = null;
-  private hostConn: DataConnection | null = null;
-  private connections = new Map<string, DataConnection>();
+  private client: MqttClient | null = null;
   private broadcastChannel: BroadcastChannel | null = null;
 
   public myPeerId: string | null = null;
@@ -63,6 +44,11 @@ export class PeerNetwork {
   private onPlayerDisconnectCallback?: (peerId: string) => void;
   private onChatCallback?: (chat: ChatMessage) => void;
   private onErrorCallback?: (err: string) => void;
+
+  private topicState = '';
+  private topicClientToHost = '';
+  private topicChat = '';
+  private pingInterval: ReturnType<typeof setInterval> | null = null;
 
   public initHost(
     roomCode: string,
@@ -83,6 +69,9 @@ export class PeerNetwork {
     this.onErrorCallback = onError;
 
     const normCode = normalizeRoomCode(roomCode);
+    this.topicState = `world-tycoon/v2/room/${normCode}/state`;
+    this.topicClientToHost = `world-tycoon/v2/room/${normCode}/client_to_host`;
+    this.topicChat = `world-tycoon/v2/room/${normCode}/chat`;
 
     // Multi-tab same-device broadcast channel
     try {
@@ -106,70 +95,46 @@ export class PeerNetwork {
       };
     } catch {}
 
-    const hostId = formatHostPeerId(roomCode);
-    try {
-      this.peer = new Peer(hostId, PEER_OPTIONS);
+    const clientId = `wt_host_${normCode}_${Math.random().toString(36).substring(2, 7)}`;
+    this.myPeerId = clientId;
 
-      this.peer.on('open', (id) => {
-        this.myPeerId = id;
-        onReady(id);
-      });
-
-      this.peer.on('connection', (conn) => {
-        this.connections.set(conn.peer, conn);
-
-        conn.on('open', () => {
-          // Immediately send latest game state to freshly connected peer
-          if (this.latestState) {
-            conn.send({
-              type: 'state',
-              state: JSON.parse(JSON.stringify(this.latestState)),
-            });
-          }
-        });
-
-        conn.on('data', (data) => {
-          const msg = data as NetworkMessage;
-          if (msg.type === 'join') {
-            this.onPlayerJoinCallback?.(msg.playerId, conn.peer, msg.name, msg.color, msg.avatar);
-            if (this.latestState) {
-              conn.send({
-                type: 'state',
-                state: JSON.parse(JSON.stringify(this.latestState)),
-              });
-            }
-          } else if (msg.type === 'action') {
-            const fromId = (msg.payload?.fromPlayerId as string) || conn.peer;
-            this.onActionCallback?.(fromId, msg.action, (msg.payload || {}) as Record<string, unknown>);
-          } else if (msg.type === 'chat') {
-            this.onChatCallback?.(msg.message);
-            this.broadcastChat(msg.message);
-          }
-        });
-
-        conn.on('close', () => {
-          this.connections.delete(conn.peer);
-          this.onPlayerDisconnectCallback?.(conn.peer);
-        });
-
-        conn.on('error', (err) => {
-          console.warn('Host connection peer warning:', err);
-        });
-      });
-
-      this.peer.on('error', (err) => {
-        console.warn('Host peer notice:', err);
-        if (err.type === 'unavailable-id') {
-          this.onErrorCallback?.(`Room code "${roomCode}" is currently occupied. Please create a new room.`);
-        } else {
-          this.myPeerId = hostId;
-          onReady(hostId);
+    this.connectMqttBroker(0, clientId, () => {
+      this.client?.subscribe([this.topicClientToHost, this.topicChat], { qos: 1 }, (err) => {
+        if (!err) {
+          onReady(clientId);
         }
       });
-    } catch {
-      this.myPeerId = hostId;
-      onReady(hostId);
-    }
+
+      this.client?.on('message', (topic, payload) => {
+        try {
+          const msg = JSON.parse(payload.toString());
+          if (topic === this.topicClientToHost) {
+            if (msg.type === 'join') {
+              this.onPlayerJoinCallback?.(msg.playerId, msg.fromPeer || 'remote-peer', msg.name, msg.color, msg.avatar);
+              if (this.latestState) {
+                this.broadcastState(this.latestState);
+              }
+            } else if (msg.type === 'action') {
+              const fromId = (msg.payload?.fromPlayerId as string) || msg.fromPeer || 'remote-peer';
+              this.onActionCallback?.(fromId, msg.action, (msg.payload || {}) as Record<string, unknown>);
+            }
+          } else if (topic === this.topicChat) {
+            if (msg.type === 'chat') {
+              this.onChatCallback?.(msg.message);
+            }
+          }
+        } catch (e) {
+          console.warn('Host parse error:', e);
+        }
+      });
+
+      // Periodically rebroadcast state in lobby to keep newly joined clients updated
+      this.pingInterval = setInterval(() => {
+        if (this.latestState && this.latestState.status === 'LOBBY') {
+          this.broadcastState(this.latestState);
+        }
+      }, 3000);
+    });
   }
 
   public joinRoom(
@@ -190,9 +155,12 @@ export class PeerNetwork {
     this.onErrorCallback = onError;
 
     const normCode = normalizeRoomCode(roomCode);
-    const hostId = formatHostPeerId(roomCode);
-    const randomSuffix = Math.random().toString(36).substring(2, 7);
-    const clientPeerId = `wt-client-${randomSuffix}`;
+    this.topicState = `world-tycoon/v2/room/${normCode}/state`;
+    this.topicClientToHost = `world-tycoon/v2/room/${normCode}/client_to_host`;
+    this.topicChat = `world-tycoon/v2/room/${normCode}/chat`;
+
+    const clientPeerId = `wt_cli_${normCode}_${Math.random().toString(36).substring(2, 7)}`;
+    this.myPeerId = clientPeerId;
 
     // Multi-tab same-device broadcast channel
     try {
@@ -203,8 +171,6 @@ export class PeerNetwork {
           this.onStateCallback?.(msg.state);
         } else if (msg.type === 'chat') {
           this.onChatCallback?.(msg.message);
-        } else if (msg.type === 'error') {
-          this.onErrorCallback?.(msg.message);
         }
       };
 
@@ -219,72 +185,95 @@ export class PeerNetwork {
     } catch {}
 
     let hasReceivedState = false;
-    let connectTimeout: ReturnType<typeof setTimeout> | null = null;
 
-    try {
-      this.peer = new Peer(clientPeerId, PEER_OPTIONS);
-
-      this.peer.on('open', (id) => {
-        this.myPeerId = id;
-        const conn = this.peer!.connect(hostId, {
-          reliable: true,
-        });
-        this.hostConn = conn;
-
-        const sendJoinPacket = () => {
-          if (conn.open) {
-            conn.send({
+    this.connectMqttBroker(0, clientPeerId, () => {
+      this.client?.subscribe([this.topicState, this.topicChat], { qos: 1 }, (err) => {
+        if (!err) {
+          // Immediately send Join request to host
+          const sendJoin = () => {
+            const joinPacket = JSON.stringify({
               type: 'join',
               playerId,
+              fromPeer: clientPeerId,
               name: playerName,
               color: playerColor,
               avatar: playerAvatar,
             });
-          }
-        };
+            this.client?.publish(this.topicClientToHost, joinPacket, { qos: 1 });
+          };
 
-        conn.on('open', () => {
-          sendJoinPacket();
-        });
+          sendJoin();
 
-        conn.on('data', (data) => {
-          hasReceivedState = true;
-          if (connectTimeout) clearTimeout(connectTimeout);
+          // Retry join packet twice if state not received yet
+          setTimeout(() => {
+            if (!hasReceivedState) sendJoin();
+          }, 1500);
 
-          const msg = data as NetworkMessage;
-          if (msg.type === 'state' || msg.type === 'update') {
-            this.onStateCallback?.(msg.state);
-          } else if (msg.type === 'chat') {
-            this.onChatCallback?.(msg.message);
-          } else if (msg.type === 'error') {
-            this.onErrorCallback?.(msg.message);
-          }
-        });
-
-        conn.on('close', () => {
-          this.onErrorCallback?.('Host closed the game room session.');
-        });
-
-        conn.on('error', (err) => {
-          console.warn('Client peer connection error:', err);
-        });
-
-        // Fallback timeout warning if host peer is not found after 8 seconds
-        connectTimeout = setTimeout(() => {
-          if (!hasReceivedState) {
-            this.onErrorCallback?.(`Unable to connect to room "${roomCode}". Please verify the room code is active and the host is online.`);
-          }
-        }, 8000);
+          setTimeout(() => {
+            if (!hasReceivedState) sendJoin();
+          }, 3500);
+        }
       });
 
-      this.peer.on('error', (err) => {
-        console.warn('Client peer broker notice:', err);
-        if (err.type === 'peer-unavailable') {
-          this.onErrorCallback?.(`Room "${roomCode}" was not found. Please check the code and ensure the host has created the lobby.`);
+      this.client?.on('message', (topic, payload) => {
+        try {
+          const msg = JSON.parse(payload.toString());
+          if (topic === this.topicState) {
+            if (msg.type === 'state' || msg.type === 'update') {
+              hasReceivedState = true;
+              this.onStateCallback?.(msg.state);
+            }
+          } else if (topic === this.topicChat) {
+            if (msg.type === 'chat') {
+              this.onChatCallback?.(msg.message);
+            }
+          }
+        } catch (e) {
+          console.warn('Client parse error:', e);
+        }
+      });
+
+      // Verification timeout after 7 seconds if host room is not active
+      setTimeout(() => {
+        if (!hasReceivedState) {
+          this.onErrorCallback?.(`Unable to find active room "${roomCode}". Please ensure the host has created the room and is waiting in the lobby.`);
+        }
+      }, 7000);
+    });
+  }
+
+  private connectMqttBroker(brokerIndex: number, clientId: string, onConnected: () => void) {
+    const brokerUrl = PUBLIC_BROKERS[brokerIndex] || PUBLIC_BROKERS[0];
+
+    try {
+      this.client = mqtt.connect(brokerUrl, {
+        clientId,
+        clean: true,
+        connectTimeout: 5000,
+        reconnectPeriod: 2000,
+        keepalive: 30,
+      });
+
+      let connected = false;
+
+      this.client.on('connect', () => {
+        if (!connected) {
+          connected = true;
+          onConnected();
+        }
+      });
+
+      this.client.on('error', (err) => {
+        console.warn(`MQTT connection error with broker ${brokerUrl}:`, err);
+        if (!connected && brokerIndex + 1 < PUBLIC_BROKERS.length) {
+          this.client?.end(true);
+          this.connectMqttBroker(brokerIndex + 1, clientId, onConnected);
         }
       });
     } catch {
-      this.myPeerId = clientPeerId;
+      if (brokerIndex + 1 < PUBLIC_BROKERS.length) {
+        this.connectMqttBroker(brokerIndex + 1, clientId, onConnected);
+      }
     }
   }
 
@@ -292,89 +281,83 @@ export class PeerNetwork {
     this.latestState = state;
     if (!this.isHost) return;
 
-    const packet: NetworkMessage = {
+    const packet = JSON.stringify({
       type: 'update',
-      state: JSON.parse(JSON.stringify(state)),
-    };
-
-    this.connections.forEach((conn) => {
-      if (conn.open) {
-        conn.send(packet);
-      }
+      state,
     });
+
+    if (this.client?.connected && this.topicState) {
+      this.client.publish(this.topicState, packet, { qos: 1 });
+    }
 
     if (this.broadcastChannel) {
       try {
-        this.broadcastChannel.postMessage(packet);
+        this.broadcastChannel.postMessage({
+          type: 'update',
+          state: JSON.parse(JSON.stringify(state)),
+        });
       } catch {}
     }
   }
 
   public sendAction(action: string, payload: Record<string, unknown> = {}) {
-    const packet: NetworkMessage = {
+    const packet = JSON.stringify({
       type: 'action',
       action,
       payload,
-    };
+    });
 
-    if (this.hostConn && this.hostConn.open) {
-      this.hostConn.send(packet);
+    if (this.client?.connected && this.topicClientToHost) {
+      this.client.publish(this.topicClientToHost, packet, { qos: 1 });
     }
 
     if (this.broadcastChannel) {
       try {
-        this.broadcastChannel.postMessage(packet);
+        this.broadcastChannel.postMessage({
+          type: 'action',
+          action,
+          payload,
+        });
       } catch {}
     }
   }
 
   public broadcastChat(chat: ChatMessage) {
-    const packet: NetworkMessage = {
+    const packet = JSON.stringify({
       type: 'chat',
       message: chat,
-    };
-
-    this.connections.forEach((conn) => {
-      if (conn.open) {
-        conn.send(packet);
-      }
     });
+
+    if (this.client?.connected && this.topicChat) {
+      this.client.publish(this.topicChat, packet, { qos: 1 });
+    }
 
     if (this.broadcastChannel) {
       try {
-        this.broadcastChannel.postMessage(packet);
+        this.broadcastChannel.postMessage({
+          type: 'chat',
+          message: chat,
+        });
       } catch {}
     }
   }
 
   public sendChat(chat: ChatMessage) {
-    if (this.isHost) {
-      this.broadcastChat(chat);
-    } else {
-      if (this.hostConn && this.hostConn.open) {
-        this.hostConn.send({ type: 'chat', message: chat });
-      }
-      if (this.broadcastChannel) {
-        try {
-          this.broadcastChannel.postMessage({ type: 'chat', message: chat });
-        } catch {}
-      }
-    }
+    this.broadcastChat(chat);
   }
 
   public destroy() {
-    if (this.hostConn) {
-      try {
-        this.hostConn.close();
-      } catch {}
-      this.hostConn = null;
+    if (this.pingInterval) {
+      clearInterval(this.pingInterval);
+      this.pingInterval = null;
     }
-    this.connections.forEach((conn) => {
+
+    if (this.client) {
       try {
-        conn.close();
+        this.client.end(true);
       } catch {}
-    });
-    this.connections.clear();
+      this.client = null;
+    }
 
     if (this.broadcastChannel) {
       try {
@@ -383,12 +366,6 @@ export class PeerNetwork {
       this.broadcastChannel = null;
     }
 
-    if (this.peer) {
-      try {
-        this.peer.destroy();
-      } catch {}
-      this.peer = null;
-    }
     this.myPeerId = null;
     this.isHost = false;
     this.latestState = null;
