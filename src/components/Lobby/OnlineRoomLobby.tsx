@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { GameState, Player } from '../../types';
-import { Globe2, Users, Copy, Check, Play, ShieldAlert, Wifi, MessageSquare, ArrowLeft } from 'lucide-react';
+import { Globe2, Users, Copy, Check, Play, ShieldAlert, Wifi, MessageSquare, ArrowLeft, Clock } from 'lucide-react';
 
 interface OnlineRoomLobbyProps {
   gameState: GameState;
@@ -21,6 +21,15 @@ export const OnlineRoomLobby: React.FC<OnlineRoomLobbyProps> = ({
 }) => {
   const [copied, setCopied] = useState<boolean>(false);
   const [chatInput, setChatInput] = useState<string>('');
+  const [cooldown, setCooldown] = useState<number>(0);
+
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const timer = setInterval(() => {
+      setCooldown((prev) => Math.max(0, prev - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [cooldown]);
 
   const handleCopy = () => {
     try {
@@ -32,9 +41,10 @@ export const OnlineRoomLobby: React.FC<OnlineRoomLobbyProps> = ({
 
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!chatInput.trim()) return;
+    if (!chatInput.trim() || cooldown > 0) return;
     onSendChat(chatInput.trim());
     setChatInput('');
+    setCooldown(3); // 3 second anti-spam cooldown
   };
 
   const players = gameState.players;
@@ -157,16 +167,33 @@ export const OnlineRoomLobby: React.FC<OnlineRoomLobbyProps> = ({
           <form onSubmit={handleSend} className="flex gap-2">
             <input
               type="text"
-              placeholder="Send quick signal to lobby..."
+              maxLength={100}
+              placeholder={cooldown > 0 ? `Anti-spam cooldown (${cooldown}s)...` : 'Send quick signal to lobby...'}
               value={chatInput}
+              disabled={cooldown > 0}
               onChange={(e) => setChatInput(e.target.value)}
-              className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white text-xs focus:border-emerald-500 focus:outline-none"
+              className={`flex-1 rounded-xl px-3 py-2 text-white text-xs focus:outline-none transition-all ${
+                cooldown > 0
+                  ? 'bg-slate-950/60 border border-slate-900 text-slate-500 cursor-not-allowed'
+                  : 'bg-slate-950 border border-slate-800 focus:border-emerald-500'
+              }`}
             />
             <button
               type="submit"
-              className="py-2 px-4 rounded-xl bg-slate-900 border border-slate-700 text-emerald-400 font-bold text-xs uppercase hover:bg-slate-800 cursor-pointer"
+              disabled={cooldown > 0 || !chatInput.trim()}
+              className={`py-2 px-4 rounded-xl font-bold text-xs uppercase transition-all flex items-center justify-center ${
+                cooldown > 0 || !chatInput.trim()
+                  ? 'bg-slate-900/60 border border-slate-800 text-slate-500 opacity-50 cursor-not-allowed'
+                  : 'bg-slate-900 border border-slate-700 text-emerald-400 hover:bg-slate-800 cursor-pointer shadow-glow-emerald'
+              }`}
             >
-              Send
+              {cooldown > 0 ? (
+                <span className="font-mono text-[10px] flex items-center gap-1">
+                  <Clock className="w-3 h-3 animate-spin" /> {cooldown}s
+                </span>
+              ) : (
+                'Send'
+              )}
             </button>
           </form>
         </div>

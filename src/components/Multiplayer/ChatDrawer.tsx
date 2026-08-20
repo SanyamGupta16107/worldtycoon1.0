@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ChatMessage } from '../../types';
-import { MessageSquare, X, Send, Smile, Radio } from 'lucide-react';
+import { MessageSquare, X, Send, Smile, Radio, Clock } from 'lucide-react';
 
 interface ChatDrawerProps {
   isOpen: boolean;
@@ -18,14 +18,28 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
   onSendChat,
 }) => {
   const [text, setText] = useState<string>('');
+  const [cooldown, setCooldown] = useState<number>(0);
+
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const timer = setInterval(() => {
+      setCooldown((prev) => Math.max(0, prev - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [cooldown]);
 
   if (!isOpen) return null;
 
+  const handleSend = (msgText: string) => {
+    if (!msgText.trim() || cooldown > 0) return;
+    onSendChat(msgText.trim());
+    setText('');
+    setCooldown(3); // 3 second anti-spam cooldown
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!text.trim()) return;
-    onSendChat(text.trim());
-    setText('');
+    handleSend(text);
   };
 
   return (
@@ -72,8 +86,13 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
         {QUICK_EMOJIS.map((emoji) => (
           <button
             key={emoji}
-            onClick={() => onSendChat(emoji)}
-            className="p-1.5 rounded-lg bg-slate-950 border border-slate-800 hover:border-cyan-400 text-sm hover:scale-120 transition-all cursor-pointer"
+            disabled={cooldown > 0}
+            onClick={() => handleSend(emoji)}
+            className={`p-1.5 rounded-lg border text-sm transition-all ${
+              cooldown > 0
+                ? 'bg-slate-950/50 border-slate-900 opacity-40 cursor-not-allowed'
+                : 'bg-slate-950 border-slate-800 hover:border-cyan-400 hover:scale-120 cursor-pointer'
+            }`}
           >
             {emoji}
           </button>
@@ -84,16 +103,33 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
       <form onSubmit={handleSubmit} className="flex gap-2">
         <input
           type="text"
-          placeholder="Type transmission..."
+          maxLength={100}
+          placeholder={cooldown > 0 ? `Anti-spam cooldown (${cooldown}s)...` : 'Type transmission...'}
           value={text}
+          disabled={cooldown > 0}
           onChange={(e) => setText(e.target.value)}
-          className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono text-xs focus:border-cyan-400 focus:outline-none"
+          className={`flex-1 rounded-xl px-3 py-2 text-white font-mono text-xs focus:outline-none transition-all ${
+            cooldown > 0
+              ? 'bg-slate-950/60 border border-slate-900 text-slate-500 cursor-not-allowed'
+              : 'bg-slate-950 border border-slate-800 focus:border-cyan-400'
+          }`}
         />
         <button
           type="submit"
-          className="py-2 px-3.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs uppercase shadow-glow-cyan transition-all cursor-pointer flex items-center justify-center"
+          disabled={cooldown > 0 || !text.trim()}
+          className={`py-2 px-3.5 rounded-xl font-bold text-xs uppercase transition-all flex items-center justify-center ${
+            cooldown > 0 || !text.trim()
+              ? 'bg-slate-800 text-slate-500 opacity-50 cursor-not-allowed'
+              : 'bg-cyan-600 hover:bg-cyan-500 text-white shadow-glow-cyan cursor-pointer'
+          }`}
         >
-          <Send className="w-3.5 h-3.5" />
+          {cooldown > 0 ? (
+            <span className="font-mono text-[10px] flex items-center gap-1">
+              <Clock className="w-3 h-3 animate-spin" /> {cooldown}s
+            </span>
+          ) : (
+            <Send className="w-3.5 h-3.5" />
+          )}
         </button>
       </form>
     </div>
