@@ -27,7 +27,14 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
 
   // Pass & Play Config
   const [localPlayersCount, setLocalPlayersCount] = useState<number>(2);
-  const [localPlayerNames, setLocalPlayerNames] = useState<string[]>(['COMMANDER 1', 'COMMANDER 2', 'COMMANDER 3', 'COMMANDER 4']);
+  const [localPlayerNames, setLocalPlayerNames] = useState<string[]>([
+    'COMMANDER 1',
+    'COMMANDER 2',
+    'COMMANDER 3',
+    'COMMANDER 4',
+    'COMMANDER 5',
+    'COMMANDER 6',
+  ]);
 
   // Online Multiplayer Config
   const [onlineAction, setOnlineAction] = useState<'choose' | 'host' | 'join'>('choose');
@@ -94,7 +101,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
         musicEnabled: false,
         gameSpeed: 'normal',
       },
-      onlinePlayerName,
+      onlinePlayerName || 'HOST EMPIRE',
       onlineColor,
       onlineAvatar
     );
@@ -102,104 +109,93 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
 
   const handleJoinOnline = () => {
     if (!joinRoomInput.trim()) return;
-    onJoinOnlineGame(joinRoomInput.trim().toUpperCase(), onlinePlayerName, onlineColor, onlineAvatar);
+    onJoinOnlineGame(
+      joinRoomInput.trim().toUpperCase(),
+      onlinePlayerName || 'ALLIED EMPIRE',
+      onlineColor,
+      onlineAvatar
+    );
   };
 
   return (
-    <div className="min-h-screen w-full bg-[#030611] text-slate-100 flex flex-col items-center justify-center p-3 sm:p-6 relative overflow-hidden font-sans select-none">
-      {/* Dynamic Cyber Aurora Background */}
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_15%,rgba(6,182,212,0.16),transparent_65%)] pointer-events-none" />
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_80%,rgba(168,85,247,0.12),transparent_60%)] pointer-events-none" />
-      <div className="absolute inset-0 bg-[linear-gradient(to_right,#0f172a18_1px,transparent_1px),linear-gradient(to_bottom,#0f172a18_1px,transparent_1px)] bg-[size:4rem_4rem] pointer-events-none" />
+    <div className="min-h-screen w-full bg-[#030612] text-slate-100 flex items-center justify-center p-3 sm:p-6 relative overflow-hidden font-sans select-none">
+      {/* Dynamic Background Glows */}
+      <div className="absolute top-1/4 -left-20 w-96 h-96 bg-cyan-600/10 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute bottom-1/4 -right-20 w-96 h-96 bg-purple-600/10 rounded-full blur-3xl pointer-events-none" />
 
-      {/* Main Glassmorphic Hub Deck */}
-      <div className="relative w-full max-w-2xl p-5 sm:p-8 rounded-3xl bg-slate-900/85 border border-cyan-500/30 shadow-[0_25px_70px_rgba(0,0,0,0.8),0_0_30px_rgba(6,182,212,0.15)] backdrop-blur-2xl z-10 flex flex-col items-center">
-        {/* Emblem & Holographic Title */}
-        <div className="flex flex-col items-center text-center mb-6">
-          <div className="relative w-16 h-16 sm:w-20 sm:h-20 mb-3 flex items-center justify-center">
-            <div className="absolute inset-0 rounded-full border-2 border-dashed border-cyan-500/40 animate-spin-slow" />
-            <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-tr from-cyan-600 via-indigo-600 to-purple-600 flex items-center justify-center shadow-glow-cyan">
-              <Globe2 className="w-7 h-7 sm:w-8 sm:h-8 text-white animate-pulse" />
-            </div>
+      <div className="relative w-full max-w-2xl bg-[#080d1e]/90 border border-slate-700/80 rounded-3xl p-5 sm:p-8 shadow-[0_25px_80px_rgba(0,0,0,0.9),0_0_40px_rgba(6,182,212,0.15)] backdrop-blur-2xl flex flex-col items-center z-10">
+        {/* Game Title Header */}
+        <div className="flex flex-col items-center mb-6 text-center">
+          <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-xs font-mono font-bold tracking-widest uppercase mb-2 shadow-glow-cyan">
+            <Globe2 className="w-3.5 h-3.5" /> WORLD TYCOON 2.0
           </div>
-
-          <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-gradient-to-r from-cyan-500/10 to-indigo-500/10 border border-cyan-500/40 text-cyan-300 text-[10px] sm:text-[11px] font-mono font-extrabold uppercase tracking-widest mb-2 shadow-glow-cyan">
-            <Sparkles className="w-3.5 h-3.5 text-cyan-400" /> GLOBAL STRATEGY TERMINAL
-          </div>
-
           <h1 className="text-3xl sm:text-4xl font-black tracking-tight text-white uppercase font-display">
-            WORLD TYCOON<span className="text-cyan-400">.</span>
+            GLOBAL ECONOMIC <span className="text-cyan-400">WARFARE</span>
           </h1>
-          <p className="text-xs font-mono text-slate-400 mt-0.5">
-            Sovereign Asset Acquisition & Real-Time Macro Simulation
+          <p className="text-xs font-mono text-slate-400 mt-1 max-w-md">
+            Sovereign Empire Simulation • Multi-Sector Monopolies • Real-Time Macroeconomics
           </p>
         </div>
 
-        {/* Mode Navigation Tabs */}
-        <div className="w-full grid grid-cols-3 gap-1.5 p-1.5 rounded-2xl bg-slate-950/80 border border-slate-800 mb-6 font-mono text-xs">
+        {/* Mode Select Tabs */}
+        <div className="grid grid-cols-3 gap-2 w-full p-1.5 bg-slate-950/80 rounded-2xl border border-slate-800 mb-6">
           <button
             onClick={() => setActiveTab('solo')}
-            className={`py-2.5 px-2 rounded-xl font-extrabold uppercase flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+            className={`py-2.5 px-3 rounded-xl font-bold font-mono text-xs uppercase flex items-center justify-center gap-2 transition-all cursor-pointer ${
               activeTab === 'solo'
-                ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-glow-cyan'
-                : 'text-slate-400 hover:text-white hover:bg-slate-900/60'
+                ? 'bg-cyan-600 text-white shadow-glow-cyan'
+                : 'text-slate-400 hover:text-white'
             }`}
           >
-            <Cpu className="w-3.5 h-3.5" />
-            <span className="truncate">SOLO VS AI</span>
+            <Cpu className="w-4 h-4" /> Solo (vs AI)
           </button>
 
           <button
             onClick={() => setActiveTab('pass_and_play')}
-            className={`py-2.5 px-2 rounded-xl font-extrabold uppercase flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+            className={`py-2.5 px-3 rounded-xl font-bold font-mono text-xs uppercase flex items-center justify-center gap-2 transition-all cursor-pointer ${
               activeTab === 'pass_and_play'
-                ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-glow-purple'
-                : 'text-slate-400 hover:text-white hover:bg-slate-900/60'
+                ? 'bg-purple-600 text-white shadow-glow-purple'
+                : 'text-slate-400 hover:text-white'
             }`}
           >
-            <Users className="w-3.5 h-3.5" />
-            <span className="truncate">PASS & PLAY</span>
+            <Users className="w-4 h-4" /> Pass & Play
           </button>
 
           <button
-            onClick={() => {
-              setActiveTab('online_multiplayer');
-              setOnlineAction('choose');
-            }}
-            className={`py-2.5 px-2 rounded-xl font-extrabold uppercase flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+            onClick={() => setActiveTab('online_multiplayer')}
+            className={`py-2.5 px-3 rounded-xl font-bold font-mono text-xs uppercase flex items-center justify-center gap-2 transition-all cursor-pointer ${
               activeTab === 'online_multiplayer'
-                ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-glow-emerald'
-                : 'text-slate-400 hover:text-white hover:bg-slate-900/60'
+                ? 'bg-emerald-600 text-white shadow-glow-emerald'
+                : 'text-slate-400 hover:text-white'
             }`}
           >
-            <Wifi className="w-3.5 h-3.5" />
-            <span className="truncate">MULTIPLAYER</span>
+            <Wifi className="w-4 h-4" /> Room (Up to 6P)
           </button>
         </div>
 
         {/* TAB 1: SOLO VS AI */}
         {activeTab === 'solo' && (
           <div className="w-full space-y-4 text-xs font-mono animate-in fade-in duration-200">
-            {/* AI Opponents Count */}
+            {/* AI Opponents Count (1 to 5 AI bots -> 2 to 6 players) */}
             <div className="bg-slate-950/70 p-3.5 rounded-xl border border-slate-800">
               <div className="flex items-center justify-between mb-2.5 text-slate-300">
                 <span className="flex items-center gap-1.5 font-bold uppercase tracking-wider text-[11px]">
                   <Users className="w-3.5 h-3.5 text-cyan-400" /> AI Competitors
                 </span>
-                <span className="text-cyan-400 font-extrabold">{aiCount} Opponents</span>
+                <span className="text-cyan-400 font-extrabold">{aiCount} Opponents ({aiCount + 1} Players)</span>
               </div>
-              <div className="grid grid-cols-3 gap-2">
-                {[1, 2, 3].map(count => (
+              <div className="grid grid-cols-5 gap-2">
+                {[1, 2, 3, 4, 5].map(count => (
                   <button
                     key={count}
                     onClick={() => setAiCount(count)}
-                    className={`py-2 px-3 rounded-lg border font-bold text-center transition-all cursor-pointer ${
+                    className={`py-2 px-1 sm:px-2 rounded-lg border font-bold text-center transition-all cursor-pointer text-xs ${
                       aiCount === count
                         ? 'bg-cyan-600 border-cyan-400 text-white shadow-glow-cyan'
                         : 'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-white hover:border-slate-700'
                     }`}
                   >
-                    {count} {count === 1 ? 'AI (Duel)' : 'AI Rivals'}
+                    {count} AI
                   </button>
                 ))}
               </div>
@@ -218,10 +214,10 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                   <button
                     key={rounds}
                     onClick={() => setRoundLimit(rounds)}
-                    className={`py-2 px-3 rounded-lg border font-bold text-center transition-all cursor-pointer ${
+                    className={`py-1.5 px-3 rounded-lg border font-bold text-center transition-all cursor-pointer ${
                       roundLimit === rounds
                         ? 'bg-indigo-600 border-indigo-400 text-white shadow-glow-purple'
-                        : 'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-white hover:border-slate-700'
+                        : 'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-white'
                     }`}
                   >
                     {rounds} R
@@ -230,11 +226,11 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
               </div>
             </div>
 
-            {/* Difficulty */}
+            {/* AI Difficulty */}
             <div className="bg-slate-950/70 p-3.5 rounded-xl border border-slate-800">
               <div className="flex items-center justify-between mb-2.5 text-slate-300">
                 <span className="flex items-center gap-1.5 font-bold uppercase tracking-wider text-[11px]">
-                  <ShieldAlert className="w-3.5 h-3.5 text-amber-400" /> AI Strategy Level
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400" /> AI Strategic Intelligence
                 </span>
                 <span className="text-amber-400 font-extrabold">{difficulty}</span>
               </div>
@@ -276,7 +272,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
         {/* TAB 2: PASS & PLAY (LOCAL MULTIPLAYER) */}
         {activeTab === 'pass_and_play' && (
           <div className="w-full space-y-4 text-xs font-mono animate-in fade-in duration-200">
-            {/* Player Count */}
+            {/* Player Count (2 to 6 Players) */}
             <div className="bg-slate-950/70 p-3.5 rounded-xl border border-slate-800">
               <div className="flex items-center justify-between mb-2.5 text-slate-300">
                 <span className="flex items-center gap-1.5 font-bold uppercase tracking-wider text-[11px]">
@@ -284,18 +280,18 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                 </span>
                 <span className="text-purple-400 font-extrabold">{localPlayersCount} Players</span>
               </div>
-              <div className="grid grid-cols-3 gap-2">
-                {[2, 3, 4].map(count => (
+              <div className="grid grid-cols-5 gap-2">
+                {[2, 3, 4, 5, 6].map(count => (
                   <button
                     key={count}
                     onClick={() => setLocalPlayersCount(count)}
-                    className={`py-2 px-3 rounded-lg border font-bold text-center transition-all cursor-pointer ${
+                    className={`py-2 px-1 sm:px-2 rounded-lg border font-bold text-center transition-all cursor-pointer text-xs ${
                       localPlayersCount === count
                         ? 'bg-purple-600 border-purple-400 text-white shadow-glow-purple'
                         : 'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-white hover:border-slate-700'
                     }`}
                   >
-                    {count} Players
+                    {count}P
                   </button>
                 ))}
               </div>
@@ -306,7 +302,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
               <span className="text-[10px] text-slate-400 uppercase font-bold block mb-1">
                 CONFIGURE COMMANDER NAMES:
               </span>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
                 {Array.from({ length: localPlayersCount }).map((_, i) => (
                   <div key={i} className="flex items-center gap-2 p-1.5 rounded-lg bg-slate-900 border border-slate-800">
                     <span
@@ -435,12 +431,12 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                   />
 
                   {/* Avatar Picker */}
-                  <div className="flex gap-1">
-                    {AVATAR_OPTIONS.slice(0, 4).map(av => (
+                  <div className="flex gap-1 overflow-x-auto max-w-full pb-0.5">
+                    {AVATAR_OPTIONS.map(av => (
                       <button
                         key={av}
                         onClick={() => setOnlineAvatar(av)}
-                        className={`p-1.5 rounded-lg border text-base cursor-pointer ${
+                        className={`p-1.5 rounded-lg border text-base cursor-pointer shrink-0 ${
                           onlineAvatar === av ? 'bg-cyan-600 border-cyan-400 scale-110' : 'bg-slate-900 border-slate-800'
                         }`}
                       >

@@ -33,7 +33,7 @@ export const PlayerTokens: React.FC<PlayerTokensProps> = ({ gameState }) => {
         const leftPercent = ((space.gridCol - 0.5) / 9) * 100;
         const topPercent = ((space.gridRow - 0.5) / 9) * 100;
 
-        // Offset multi-player pawns cleanly
+        // Offset multi-player pawns cleanly (supporting up to 6 players on one tile)
         let offsetX = 0;
         let offsetY = 0;
         if (playersOnTile.length > 1) {
@@ -42,8 +42,10 @@ export const PlayerTokens: React.FC<PlayerTokensProps> = ({ gameState }) => {
             { x: 11, y: -11 },
             { x: -11, y: 11 },
             { x: 11, y: 11 },
+            { x: 0, y: -15 },
+            { x: 0, y: 15 },
           ];
-          const chosen = offsets[playerIndexInTile % 4];
+          const chosen = offsets[playerIndexInTile % 6];
           offsetX = chosen.x;
           offsetY = chosen.y;
         }

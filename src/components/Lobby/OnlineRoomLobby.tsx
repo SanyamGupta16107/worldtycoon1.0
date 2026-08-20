@@ -86,7 +86,7 @@ export const OnlineRoomLobby: React.FC<OnlineRoomLobbyProps> = ({
         <div className="w-full mb-6">
           <div className="flex items-center justify-between text-xs font-mono text-slate-400 uppercase font-bold mb-2">
             <span className="flex items-center gap-1.5">
-              <Users className="w-4 h-4 text-cyan-400" /> CONNECTED EMPIRES ({players.length} / 4)
+              <Users className="w-4 h-4 text-cyan-400" /> CONNECTED EMPIRES ({players.length} / 6)
             </span>
             <span>{isHost ? 'YOU ARE HOST' : 'WAITING FOR HOST'}</span>
           </div>
@@ -124,7 +124,7 @@ export const OnlineRoomLobby: React.FC<OnlineRoomLobbyProps> = ({
               </div>
             ))}
 
-            {Array.from({ length: 4 - players.length }).map((_, i) => (
+            {Array.from({ length: Math.max(0, 6 - players.length) }).map((_, i) => (
               <div
                 key={i}
                 className="p-3 rounded-xl border border-dashed border-slate-800/60 text-center text-slate-600 text-xs font-mono"

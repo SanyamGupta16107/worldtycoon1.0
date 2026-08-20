@@ -51,6 +51,8 @@ const BOT_ROSTER: { name: string; color: Player['color']; avatar: string; person
   { name: 'NEXUS-AI', color: '#a855f7', avatar: '🤖', personality: 'aggressive' },
   { name: 'VALKYRIE-AI', color: '#f59e0b', avatar: '🛰️', personality: 'balanced' },
   { name: 'QUANTUM-AI', color: '#10b981', avatar: '⚡', personality: 'conservative' },
+  { name: 'TITAN-AI', color: '#ec4899', avatar: '👑', personality: 'aggressive' },
+  { name: 'SOLARIS-AI', color: '#ef4444', avatar: '🚀', personality: 'balanced' },
 ];
 
 /**
@@ -61,8 +63,8 @@ export function createInitialGameState(userConfig: Partial<GameConfig> = {}): Ga
   const players: Player[] = [];
 
   if (config.mode === 'pass_and_play') {
-    const humanCount = Math.min(Math.max(2, config.humanCount || 2), 4);
-    const defaultAvatars = ['👨‍✈️', '👑', '💎', '🚀'];
+    const humanCount = Math.min(Math.max(2, config.humanCount || 2), 6);
+    const defaultAvatars = ['👨‍✈️', '👑', '💎', '🚀', '🤖', '⚡'];
     for (let i = 0; i < humanCount; i++) {
       players.push({
         id: `player-${i + 1}`,
@@ -131,7 +133,7 @@ export function createInitialGameState(userConfig: Partial<GameConfig> = {}): Ga
       },
     });
 
-    const aiToSpawn = Math.min(Math.max(1, config.aiCount), 3);
+    const aiToSpawn = Math.min(Math.max(1, config.aiCount), 5);
     for (let i = 0; i < aiToSpawn; i++) {
       const bot = BOT_ROSTER[i];
       players.push({
@@ -221,7 +223,7 @@ export function addMultiplayerPeer(
   color: Player['color'],
   avatar: string
 ): GameState {
-  if (state.players.some(p => p.id === playerId || (peerId && p.peerId === peerId)) || state.players.length >= 4) {
+  if (state.players.some(p => p.id === playerId || (peerId && p.peerId === peerId)) || state.players.length >= 6) {
     return state;
   }
 
